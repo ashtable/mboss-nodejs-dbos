@@ -1,0 +1,3 @@
+[submodule "mboss-zod"]
+	path = mboss-zod
+	url = https://github.com/ashtable/mboss-zod.git
