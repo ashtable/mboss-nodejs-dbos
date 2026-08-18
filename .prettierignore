@@ -1,0 +1,8 @@
+node_modules
+coverage
+mboss-zod
+mboss-core
+
+# Blessed email snapshots. Reformatting them would
+# rewrite the artifact under test.
+test/email/__snapshots__

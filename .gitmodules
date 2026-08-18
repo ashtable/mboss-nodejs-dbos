@@ -1,3 +1,8 @@
 [submodule "mboss-zod"]
 	path = mboss-zod
-	url = https://github.com/ashtable/mboss-zod.git
+	url = https://github.com/ashtable/mboss-zod
+	branch = zod-v0.0.4
+[submodule "mboss-core"]
+	path = mboss-core
+	url = https://github.com/ashtable/mboss-core
+	branch = core-v0.0.2
