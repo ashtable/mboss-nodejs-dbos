@@ -1,6 +1,9 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import type { WorkerDeps } from '../deps.js';
+import { broadcastSend } from './broadcast-send.js';
+import type { BroadcastSendInput } from './broadcast-send.js';
+import { broadcastTestSend } from './broadcast-test-send.js';
 import { confirmationEmail } from './confirmation-email.js';
 import type { ConfirmationEmailInput } from './confirmation-email.js';
 
@@ -27,4 +30,13 @@ export function registerWorkflows(deps: WorkerDeps): void {
     (input: ConfirmationEmailInput) => confirmationEmail(deps, input),
     { name: 'confirmationEmail' },
   );
+
+  DBOS.registerWorkflow(
+    (input: BroadcastSendInput) => broadcastSend(deps, input),
+    { name: 'broadcastSend' },
+  );
+
+  DBOS.registerWorkflow((input: unknown) => broadcastTestSend(deps, input), {
+    name: 'broadcastTestSend',
+  });
 }

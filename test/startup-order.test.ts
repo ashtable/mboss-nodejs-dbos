@@ -64,6 +64,10 @@ describe('startWorker', () => {
    * never heard of, and no email is ever sent.
    */
   it('registers exactly the workflows the API enqueues', () => {
-    expect(registeredNames()).toEqual(['confirmationEmail']);
+    expect(registeredNames()).toEqual([
+      'confirmationEmail',
+      'broadcastSend',
+      'broadcastTestSend',
+    ]);
   });
 });

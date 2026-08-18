@@ -38,6 +38,7 @@ export class FakeInternalApi implements InternalApi {
   private readonly broadcasts = new Map<string, InternalBroadcastResponse>();
   private readonly recipients = new Map<string, InternalRecipient[]>();
   private readonly settled = new Map<string, DeliveryStatus>();
+  private readonly raced = new Map<string, DeliveryStatus>();
 
   constructor(private readonly pageSize = 100) {}
 
@@ -51,6 +52,22 @@ export class FakeInternalApi implements InternalApi {
   ): void {
     this.broadcasts.set(broadcast.id, broadcast);
     this.recipients.set(broadcast.id, recipients);
+  }
+
+  /**
+   * Pretends someone else reached this row
+   * between the page that listed it and the flip
+   * that settles it. The flip then finds it
+   * already terminal and reports the status that
+   * was recorded rather than the one asked for,
+   * which is what the real route does.
+   */
+  settleConcurrently(
+    broadcastId: string,
+    subscriberId: string,
+    status: DeliveryStatus,
+  ): void {
+    this.raced.set(`${broadcastId}:${subscriberId}`, status);
   }
 
   statusOf(broadcastId: string, subscriberId: string): DeliveryStatus {
@@ -113,8 +130,11 @@ export class FakeInternalApi implements InternalApi {
     this.flips.push(flip);
 
     const key = `${broadcastId}:${flip.subscriberId}`;
-    const recorded = this.settled.get(key);
-    if (recorded !== undefined) return { status: recorded };
+    const recorded = this.settled.get(key) ?? this.raced.get(key);
+    if (recorded !== undefined) {
+      this.settled.set(key, recorded);
+      return { status: recorded };
+    }
 
     this.settled.set(key, flip.status);
     return { status: flip.status };
