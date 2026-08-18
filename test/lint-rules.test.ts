@@ -39,4 +39,15 @@ describe('@mboss/core import restriction', () => {
       ),
     ).toHaveLength(0);
   });
+
+  it('allows @mboss/core/email', async () => {
+    // The render layer is shared with the admin
+    // console and imports nothing at all, so it
+    // costs this service's type graph nothing.
+    expect(
+      await restrictedImportRules(
+        "import { renderBroadcastEmail } from '@mboss/core/email';\n",
+      ),
+    ).toHaveLength(0);
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderBroadcastEmail } from '../../src/email/broadcast.js';
+import { renderBroadcastEmail } from '@mboss/core/email';
 
 const SUBJECT = 'Progress update #3 — the canvas is alive';
 

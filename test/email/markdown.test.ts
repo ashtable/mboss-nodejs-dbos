@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderMarkdown } from '../../src/email/markdown.js';
+import { renderMarkdown } from '@mboss/core/email';
 
 describe('renderMarkdown', () => {
   it('escapes HTML in the source', () => {

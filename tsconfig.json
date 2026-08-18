@@ -14,7 +14,8 @@
     "forceConsistentCasingInFileNames": true,
     "paths": {
       "@mboss/zod": ["./mboss-zod/src/index.ts"],
-      "@mboss/core/signed-links": ["./mboss-core/src/signed-links/index.ts"]
+      "@mboss/core/signed-links": ["./mboss-core/src/signed-links/index.ts"],
+      "@mboss/core/email": ["./mboss-core/src/email/index.ts"]
     }
   },
   "include": [

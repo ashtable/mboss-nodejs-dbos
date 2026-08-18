@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderConfirmationEmail } from '../../src/email/confirmation.js';
+import { renderConfirmationEmail } from '@mboss/core/email';
 
 const message = renderConfirmationEmail({
   to: 'pat@stmarks.org',

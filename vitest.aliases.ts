@@ -11,4 +11,7 @@ export const aliases = {
   '@mboss/core/signed-links': fileURLToPath(
     new URL('./mboss-core/src/signed-links/index.ts', import.meta.url),
   ),
+  '@mboss/core/email': fileURLToPath(
+    new URL('./mboss-core/src/email/index.ts', import.meta.url),
+  ),
 };
