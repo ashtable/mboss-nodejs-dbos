@@ -71,7 +71,9 @@ describe('broadcastSend', () => {
       'fetch-broadcast',
       'fetch-recipients:1',
       'send:sub_1',
+      'flip:sub_1',
       'send:sub_2',
+      'flip:sub_2',
       'complete',
     ]);
   });
@@ -87,8 +89,10 @@ describe('broadcastSend', () => {
       'fetch-broadcast',
       'fetch-recipients:1',
       'send:sub_1',
+      'flip:sub_1',
       'fetch-recipients:2',
       'send:sub_2',
+      'flip:sub_2',
       'complete',
     ]);
     expect(api.calls).toContain('listRecipients:bc_1:sub_1');
@@ -162,15 +166,45 @@ describe('broadcastSend', () => {
 
     await broadcastSend(deps, { broadcastId: 'bc_1' });
     const afterFirstRun = mailer.sent.length;
+    reset();
     await broadcastSend(deps, { broadcastId: 'bc_1' });
 
     // The pending set is re-derived from the API
-    // on every run, never remembered here, so a
-    // row that has been flipped is simply not on
-    // a later page.
+    // on every run and never remembered here, so
+    // the second run pages, is handed nothing, and
+    // issues no per-recipient step at all. Naming
+    // the whole sequence says that about the
+    // worker rather than about the fake's filter.
     expect(afterFirstRun).toBe(2);
+    expect(stepNames()).toEqual([
+      'fetch-broadcast',
+      'fetch-recipients:1',
+      'complete',
+    ]);
     expect(mailer.sent).toHaveLength(2);
     expect(api.completeCalls).toHaveLength(2);
+  });
+
+  it('finishes the broadcast when a flip fails transiently', async () => {
+    // The send is the step that must not be
+    // retried; the flip that records it is
+    // idempotent server-side, so a blip there has
+    // to be survivable or one 503 costs the rest
+    // of the audience their email.
+    const { api, deps } = seed([recipient('sub_1'), recipient('sub_2')]);
+    api.failNextCall(
+      'flipDelivery',
+      new InternalApiError(503, 'Service Unavailable'),
+    );
+
+    await expect(
+      broadcastSend(deps, { broadcastId: 'bc_1' }),
+    ).resolves.toBeUndefined();
+
+    expect(api.statusOf('bc_1', 'sub_1')).toBe('sent');
+    expect(api.statusOf('bc_1', 'sub_2')).toBe('sent');
+    expect(api.completeCalls).toEqual(['bc_1']);
+    expect(mailer.toAddress('sub_1@example.com')).toHaveLength(1);
   });
 
   it('keeps going when a flip reports a status the row already had', async () => {
@@ -224,19 +258,26 @@ describe('broadcastSend', () => {
     expect(broadcastFetches(api)).toHaveLength(1);
   });
 
-  it('does not retry the per-recipient send', async () => {
+  it('does not retry the send, and does retry the flip recording it', async () => {
     const { deps } = seed([recipient('sub_1'), recipient('sub_2')]);
 
     await broadcastSend(deps, { broadcastId: 'bc_1' });
 
     // A retry after a send the provider already
-    // accepted would deliver a second copy. The
-    // comment on the step says why that window is
-    // left as narrow as a crash; this stops it
-    // being widened by a well-meaning edit.
+    // accepted would deliver a second copy, so the
+    // send stays un-retried; the flip is a
+    // conditional update, so it retries like every
+    // other call into the API. This stops either
+    // half being changed by a well-meaning edit.
     const sends = steps.filter((step) => step.name.startsWith('send:'));
     expect(sends).toHaveLength(2);
     expect(sends.every((step) => step.config['retriesAllowed'] === false)).toBe(
+      true,
+    );
+
+    const flips = steps.filter((step) => step.name.startsWith('flip:'));
+    expect(flips).toHaveLength(2);
+    expect(flips.every((step) => step.config['retriesAllowed'] === true)).toBe(
       true,
     );
   });

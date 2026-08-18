@@ -24,12 +24,15 @@ const MAX_ERROR = 2000;
  * Sends one broadcast to everyone still waiting
  * for it.
  *
- * The recipient set is not held here. Every page
- * comes from the API, which returns only rows
- * still pending, so a run that starts over —
- * after a crash, or because an admin re-enqueued
- * — sends exactly what is still outstanding and
- * nothing else.
+ * The recipient set is not held here, and the two
+ * ways a run starts over are protected by
+ * different things. A re-enqueue under a new
+ * workflow id re-derives the set from the API,
+ * which returns only rows still pending, so
+ * nothing already settled is sent again. A crash
+ * and resume under the same id does not re-page at
+ * all: DBOS replays the checkpointed pages, and
+ * the per-recipient steps that already ran.
  */
 export async function broadcastSend(
   deps: WorkerDeps,
@@ -52,10 +55,28 @@ export async function broadcastSend(
     );
 
     for (const row of recipients.rows) {
-      await DBOS.runStep(() => sendToRecipient(deps, broadcast, row), {
-        name: `send:${row.subscriberId}`,
-        retriesAllowed: false,
-      });
+      // Two steps, not one. The send must not be
+      // retried, because a second attempt after
+      // the provider accepted the first delivers a
+      // second copy. The flip must be: it is a
+      // conditional update that reports whatever
+      // status was recorded first, so repeating it
+      // is a no-op, while leaving it un-retried
+      // lets one blip on one recipient strand
+      // everyone after them.
+      const outcome = await DBOS.runStep(
+        () => attemptSend(deps, broadcast, row),
+        { name: `send:${row.subscriberId}`, retriesAllowed: false },
+      );
+
+      await DBOS.runStep(
+        () =>
+          deps.api.flipDelivery(broadcast.id, {
+            subscriberId: row.subscriberId,
+            ...outcome,
+          }),
+        { name: `flip:${row.subscriberId}`, ...RETRY_THE_API },
+      );
     }
 
     cursor = recipients.nextCursor;
@@ -68,45 +89,25 @@ export async function broadcastSend(
 }
 
 /**
- * One recipient's whole send — the audience
- * check, the link, the email and the record of
- * what happened — in a single step.
+ * One recipient's send — the audience check, the
+ * link, the email — and the outcome to record for
+ * it. A terminal failure comes back as that
+ * outcome rather than being thrown: one bad
+ * address must not strand the rest of the
+ * audience, and the admin sees it on the delivery
+ * row either way.
  *
- * The step is deliberately not retried. It sends
- * an email and then records that it sent one, so
- * a retry after a send SendGrid already accepted
- * would deliver a second copy. A crash in that
- * same window has the same effect on resume: one
- * recipient may get one progress email twice.
- * That is accepted. Closing the window would take
- * a provider-side idempotency key SendGrid does
- * not offer, and a duplicated progress note is a
- * far smaller harm than a broadcast that stalls.
- * Retrying here would widen a window that is
- * meant to stay as narrow as a crash.
- */
-async function sendToRecipient(
-  deps: WorkerDeps,
-  broadcast: InternalBroadcastResponse,
-  row: InternalRecipient,
-): Promise<void> {
-  const outcome = await attemptSend(deps, broadcast, row);
-
-  // The flip reports the status the row actually
-  // holds, which is the one recorded first. If
-  // another run got there already, that answer
-  // stands and this one keeps going.
-  await deps.api.flipDelivery(broadcast.id, {
-    subscriberId: row.subscriberId,
-    ...outcome,
-  });
-}
-
-/**
- * A terminal failure is recorded rather than
- * thrown: one bad address must not strand the
- * rest of the audience, and the admin sees it on
- * the delivery row either way.
+ * The step this runs in is deliberately not
+ * retried, so one duplicate-send window is
+ * accepted: a crash between the provider taking
+ * the message and this outcome being checkpointed
+ * means the recipient is mailed again on resume.
+ * That window is as narrow as a crash — returning
+ * the outcome is the next thing that happens —
+ * and closing it entirely would take a
+ * provider-side idempotency key SendGrid does not
+ * offer. One duplicated progress note is a far
+ * smaller harm than a broadcast that stalls.
  */
 async function attemptSend(
   deps: WorkerDeps,
