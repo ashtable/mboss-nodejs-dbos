@@ -20,7 +20,8 @@ import {
  * in a union keeps the arming honest: a route
  * that does not check is not on the list.
  */
-type FailableCall = 'getBroadcast' | 'flipDelivery';
+type FailableCall =
+  'getSubscriber' | 'recordConfirmationSent' | 'getBroadcast' | 'flipDelivery';
 
 /**
  * An in-memory stand-in for the API's internal
@@ -46,7 +47,10 @@ export class FakeInternalApi implements InternalApi {
   private readonly recipients = new Map<string, InternalRecipient[]>();
   private readonly settled = new Map<string, DeliveryStatus>();
   private readonly raced = new Map<string, DeliveryStatus>();
-  private readonly armedFailures = new Map<FailableCall, Error>();
+  private readonly armedFailures = new Map<
+    FailableCall,
+    { error: Error; remaining: number }
+  >();
 
   constructor(private readonly pageSize = 100) {}
 
@@ -58,14 +62,24 @@ export class FakeInternalApi implements InternalApi {
    * how many times the worker tried.
    */
   failNextCall(call: FailableCall, error: Error): void {
-    this.armedFailures.set(call, error);
+    this.failNextCalls(call, 1, error);
+  }
+
+  /**
+   * The same for a run of calls: not a blip but
+   * the API gone for a redeploy, which is the
+   * thing a retry budget is measured against.
+   */
+  failNextCalls(call: FailableCall, times: number, error: Error): void {
+    this.armedFailures.set(call, { error, remaining: times });
   }
 
   private throwIfArmed(call: FailableCall): void {
     const armed = this.armedFailures.get(call);
     if (armed === undefined) return;
-    this.armedFailures.delete(call);
-    throw armed;
+    armed.remaining -= 1;
+    if (armed.remaining <= 0) this.armedFailures.delete(call);
+    throw armed.error;
   }
 
   seedSubscriber(subscriber: InternalSubscriberResponse): void {
@@ -102,6 +116,7 @@ export class FakeInternalApi implements InternalApi {
 
   async getSubscriber(id: string): Promise<InternalSubscriberResponse> {
     this.calls.push(`getSubscriber:${id}`);
+    this.throwIfArmed('getSubscriber');
     const subscriber = this.subscribers.get(id);
     if (!subscriber) throw new InternalApiError(404, 'Not Found');
     return subscriber;
@@ -109,6 +124,7 @@ export class FakeInternalApi implements InternalApi {
 
   async recordConfirmationSent(id: string): Promise<ConfirmationSentResponse> {
     this.calls.push(`recordConfirmationSent:${id}`);
+    this.throwIfArmed('recordConfirmationSent');
     if (!this.subscribers.has(id)) throw new InternalApiError(404, 'Not Found');
     this.confirmationSent.push(id);
     return { confirmationEmailSentAt: '2026-08-16T12:00:00.000Z' };

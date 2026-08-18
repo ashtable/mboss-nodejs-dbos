@@ -33,6 +33,11 @@ const MAX_ERROR = 2000;
  * and resume under the same id does not re-page at
  * all: DBOS replays the checkpointed pages, and
  * the per-recipient steps that already ran.
+ *
+ * A run that stops early stops loudly: the rows
+ * it never reached stay pending and the broadcast
+ * stays sending, which is a state someone has to
+ * clear, and can.
  */
 export async function broadcastSend(
   deps: WorkerDeps,
@@ -69,6 +74,30 @@ export async function broadcastSend(
         { name: `send:${row.subscriberId}`, retriesAllowed: false },
       );
 
+      // A flip the API will not take at all ends
+      // the run, and that is the decision rather
+      // than an oversight. A row that has already
+      // settled comes back with the status it
+      // holds, so a refusal means the delivery row
+      // is not there or the body describing it is
+      // not one the API takes — neither of which
+      // is about this recipient, and both of which
+      // meet every recipient after them. The same
+      // is true once the attempts are spent: the
+      // API has been unreachable for minutes.
+      // Carrying on would mail the rest of the
+      // audience and record none of it, and
+      // completion counts a row it never saw
+      // flipped as handled — so the broadcast
+      // would be marked sent with nobody able to
+      // say who was written to, and a completion
+      // cannot be taken back. Stopping leaves
+      // every unflipped row pending, which is what
+      // the recipient list is derived from, so the
+      // run can be picked up from this step and
+      // carry on from exactly here, with the sends
+      // it already recorded replayed rather than
+      // repeated.
       await DBOS.runStep(
         () =>
           deps.api.flipDelivery(broadcast.id, {
