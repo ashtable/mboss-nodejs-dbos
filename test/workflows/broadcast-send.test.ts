@@ -223,6 +223,73 @@ describe('broadcastSend', () => {
     expect(mailer.toAddress('sub_1@example.com')).toHaveLength(1);
   });
 
+  it('stops the run when a flip is refused outright, and a later run picks up where it stopped', async () => {
+    const { api, deps } = seed([
+      recipient('sub_1'),
+      recipient('sub_2'),
+      recipient('sub_3'),
+    ]);
+    api.failNextCall('flipDelivery', new InternalApiError(404, 'Not Found'));
+
+    await expect(
+      broadcastSend(deps, { broadcastId: 'bc_1' }),
+    ).rejects.toMatchObject({ status: 404 });
+
+    // Nothing completed and nothing fabricated:
+    // the run ends at the recipient it could not
+    // account for, and that row is still pending.
+    expect(stepNames()).toEqual([
+      'fetch-broadcast',
+      'fetch-recipients:1',
+      'send:sub_1',
+      'flip:sub_1',
+    ]);
+    expect(api.completeCalls).toEqual([]);
+    expect(api.statusOf('bc_1', 'sub_1')).toBe('pending');
+    expect(mailer.toAddress('sub_2@example.com')).toHaveLength(0);
+
+    reset();
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    // Which is what makes stopping cheap: the
+    // pending rows are the recipient list, so the
+    // rest of the broadcast is still ahead of it.
+    // This second run starts over rather than
+    // picking the first one back up, so the
+    // recipient whose flip was refused is mailed
+    // twice; resuming from the step that failed
+    // replays the send already recorded and costs
+    // nobody a second copy.
+    expect(api.statusOf('bc_1', 'sub_1')).toBe('sent');
+    expect(api.statusOf('bc_1', 'sub_2')).toBe('sent');
+    expect(api.statusOf('bc_1', 'sub_3')).toBe('sent');
+    expect(api.completeCalls).toEqual(['bc_1']);
+    expect(mailer.toAddress('sub_1@example.com')).toHaveLength(2);
+    expect(mailer.toAddress('sub_3@example.com')).toHaveLength(1);
+  });
+
+  it('stops the run when a flip runs out of attempts', async () => {
+    // The API answering nothing but 5xx for longer
+    // than the budget is the failure that actually
+    // happens. Carrying on here would mail the
+    // whole remaining audience with not one
+    // delivery recorded, and mail every one of
+    // them again on the next run.
+    const { api, deps } = seed([recipient('sub_1'), recipient('sub_2')]);
+    api.failNextCalls(
+      'flipDelivery',
+      20,
+      new InternalApiError(503, 'Service Unavailable'),
+    );
+
+    await expect(
+      broadcastSend(deps, { broadcastId: 'bc_1' }),
+    ).rejects.toThrow();
+
+    expect(api.completeCalls).toEqual([]);
+    expect(mailer.toAddress('sub_2@example.com')).toHaveLength(0);
+  });
+
   it('keeps going when a flip reports a status the row already had', async () => {
     const { api, deps } = seed([recipient('sub_1'), recipient('sub_2')]);
     api.settleConcurrently('bc_1', 'sub_1', 'failed');
