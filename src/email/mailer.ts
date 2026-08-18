@@ -1,7 +1,6 @@
+import type { EmailMessage } from '@mboss/core/email';
 import { Client } from '@sendgrid/client';
 import { MailService } from '@sendgrid/mail';
-
-import type { EmailMessage } from './message.js';
 
 /**
  * The one place in the project that talks to

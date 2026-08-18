@@ -14,9 +14,9 @@ import prettier from 'eslint-config-prettier';
  * actually fires.
  */
 const coreSubpathOnly =
-  'Cloud repos import only @mboss/core/signed-links. ' +
-  'The barrel would pull elkjs and ts-morph into ' +
-  'the cloud type graph.';
+  'Cloud repos import only the @mboss/core/signed-links ' +
+  'and @mboss/core/email subpaths. The barrel would pull ' +
+  'elkjs and ts-morph into the cloud type graph.';
 
 export default tseslint.config(
   {
@@ -39,7 +39,11 @@ export default tseslint.config(
           paths: [{ name: '@mboss/core', message: coreSubpathOnly }],
           patterns: [
             {
-              group: ['@mboss/core/*', '!@mboss/core/signed-links'],
+              group: [
+                '@mboss/core/*',
+                '!@mboss/core/signed-links',
+                '!@mboss/core/email',
+              ],
               message: coreSubpathOnly,
             },
           ],

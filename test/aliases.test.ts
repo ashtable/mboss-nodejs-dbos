@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { renderMarkdown } from '@mboss/core/email';
 import { parseKeyRing } from '@mboss/core/signed-links';
 import { SubscriberStatusSchema } from '@mboss/zod';
 
@@ -22,5 +23,9 @@ describe('nested submodule aliases', () => {
 
   it('resolves the @mboss/core/signed-links subpath', () => {
     expect(parseKeyRing(`k1:${'a'.repeat(64)}`).active.kid).toBe('k1');
+  });
+
+  it('resolves the @mboss/core/email subpath', () => {
+    expect(renderMarkdown('# The canvas is alive.')).toContain('font:600 22px');
   });
 });

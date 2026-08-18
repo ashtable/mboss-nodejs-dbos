@@ -1,8 +1,8 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { renderConfirmationEmail } from '@mboss/core/email';
 import type { InternalSubscriberResponse } from '@mboss/zod';
 
 import type { WorkerDeps } from '../deps.js';
-import { renderConfirmationEmail } from '../email/confirmation.js';
 import { isTransientSendFailure } from '../email/mailer.js';
 import { manageUrl, mintManageToken } from '../links.js';
 import { RETRY_THE_API } from './retry.js';

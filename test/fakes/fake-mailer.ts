@@ -1,4 +1,5 @@
-import type { EmailMessage } from '../../src/email/message.js';
+import type { EmailMessage } from '@mboss/core/email';
+
 import type { Mailer } from '../../src/email/mailer.js';
 
 /**
