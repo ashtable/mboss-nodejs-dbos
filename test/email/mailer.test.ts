@@ -7,6 +7,7 @@ import { readEnv } from '../../src/env.js';
 import {
   buildSendGridClient,
   createSendGridMailer,
+  isTransientSendFailure,
 } from '../../src/email/mailer.js';
 
 /**
@@ -148,5 +149,36 @@ describe('the SendGrid mailer', () => {
     expect(requests[0]?.data?.['content']).toEqual([
       { type: 'text/html', value: '<p>hi</p>' },
     ]);
+  });
+});
+
+describe('isTransientSendFailure', () => {
+  /**
+   * The provider's own error carries the HTTP
+   * status as `code`.
+   */
+  function providerError(code: number): Error {
+    return Object.assign(new Error('provider said no'), { code });
+  }
+
+  it('retries a rate limit', () => {
+    expect(isTransientSendFailure(providerError(429))).toBe(true);
+  });
+
+  it('retries a provider-side failure', () => {
+    expect(isTransientSendFailure(providerError(503))).toBe(true);
+  });
+
+  it('does not retry a rejected message', () => {
+    // A 400 means the message itself is wrong.
+    // Sending it again produces the same 400 and
+    // delays the failure by three attempts.
+    expect(isTransientSendFailure(providerError(400))).toBe(false);
+  });
+
+  it('retries anything that carries no status', () => {
+    expect(isTransientSendFailure(new Error('socket hang up'))).toBe(true);
+    expect(isTransientSendFailure(null)).toBe(true);
+    expect(isTransientSendFailure('nope')).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ import {
   shutdownDbos,
 } from './helpers/dbos.js';
 import { EMAIL_QUEUE, startWorker } from '../../src/worker.js';
+import { testDeps } from '../helpers/deps.js';
 
 /**
  * What this file proves is DBOS's behaviour, not
@@ -34,7 +35,10 @@ describe('worker startup against a real system database', () => {
   });
 
   it('creates its system tables in the dbos schema and leaves public alone', async () => {
-    await startWorker({ name: 'mboss-dbos-test', systemDatabaseUrl });
+    await startWorker(testDeps(), {
+      name: 'mboss-dbos-test',
+      systemDatabaseUrl,
+    });
 
     const tables = await queryTestDatabase<{
       table_schema: string;
@@ -61,7 +65,10 @@ describe('worker startup against a real system database', () => {
   });
 
   it('registers the email queue against the system database', async () => {
-    await startWorker({ name: 'mboss-dbos-test', systemDatabaseUrl });
+    await startWorker(testDeps(), {
+      name: 'mboss-dbos-test',
+      systemDatabaseUrl,
+    });
 
     await expect(DBOS.retrieveQueue(EMAIL_QUEUE)).resolves.not.toBeNull();
   });

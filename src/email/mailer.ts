@@ -66,3 +66,25 @@ export function createSendGridMailer(
     },
   };
 }
+
+/**
+ * Whether a refused send is worth another try.
+ *
+ * The provider reports the HTTP status as `code`
+ * on the thrown error. A rate limit or a
+ * provider-side failure will likely pass on the
+ * next attempt; anything else in the 4xx range is
+ * a complaint about the message itself, and
+ * resending it unchanged only delays the failure.
+ * A throw with no status at all never reached the
+ * provider, which is the transient case retries
+ * exist for.
+ */
+export function isTransientSendFailure(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return true;
+
+  const code = (error as { code?: unknown }).code;
+  if (typeof code !== 'number') return true;
+
+  return code === 429 || code >= 500;
+}

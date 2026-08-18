@@ -1,5 +1,8 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
+import type { WorkerDeps } from './deps.js';
+import { registerWorkflows } from './workflows/register.js';
+
 /**
  * Every cloud email send goes through this one
  * queue. One worker at a time is enough: a
@@ -16,16 +19,22 @@ export type WorkerConfig = {
 };
 
 /**
- * Launch has to come after configuration and
- * before the queue: launch is what opens the
- * connection, and a queue is a row DBOS writes
- * through it. Registering the queue first fails
- * outright, which is what
+ * The order is load-bearing in both directions.
+ * Registration has to finish before launch,
+ * because launch is what publishes the registry.
+ * The queue has to come after it, because a queue
+ * is a row DBOS writes through the connection
+ * launch opens — registering it first fails
+ * outright, which
  * `test/integration/startup.integration.test.ts`
  * demonstrates.
  */
-export async function startWorker(config: WorkerConfig): Promise<void> {
+export async function startWorker(
+  deps: WorkerDeps,
+  config: WorkerConfig,
+): Promise<void> {
   DBOS.setConfig(config);
+  registerWorkflows(deps);
   await DBOS.launch();
   await DBOS.registerQueue(EMAIL_QUEUE, { workerConcurrency: 1 });
 }

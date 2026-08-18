@@ -1,5 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
+import { buildDeps } from './deps.js';
 import { readEnv } from './env.js';
 import { startWorker } from './worker.js';
 
@@ -24,7 +25,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   });
 }
 
-await startWorker({
+await startWorker(buildDeps(env), {
   name: 'mboss-dbos',
   systemDatabaseUrl: env.DBOS_SYSTEM_DATABASE_URL,
 });
