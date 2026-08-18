@@ -50,6 +50,22 @@ describe('recovering an errored confirmation', () => {
     return failed?.functionID ?? -1;
   }
 
+  /**
+   * A second failure, later than the first, so
+   * the listing has an old one and a new one. A
+   * 4xx is not retried, so this one gives up on
+   * its first step.
+   */
+  async function seedLaterFailure(workflowID: string): Promise<void> {
+    api.failNextCall('getSubscriber', new InternalApiError(400, 'Bad Request'));
+
+    const handle = await client.enqueue(
+      { workflowName: 'confirmationEmail', queueName: EMAIL_QUEUE, workflowID },
+      { subscriberId: SUBSCRIBER.id },
+    );
+    await expect(handle.getResult()).rejects.toThrow();
+  }
+
   beforeEach(async () => {
     const systemDatabaseUrl = await resetTestDatabase();
 
@@ -115,5 +131,24 @@ describe('recovering an errored confirmation', () => {
     // the send does not cost the subscriber a
     // second email.
     expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('puts the oldest failure first, so a limit hides the newest', async () => {
+    const NEWER_ID = 'confirm:sub_1:1';
+    await seedLaterFailure(NEWER_ID);
+
+    const listed = await client.listWorkflows({ status: 'ERROR', limit: 100 });
+    expect(listed.map((workflow) => workflow.workflowID)).toEqual([
+      WORKFLOW_ID,
+      NEWER_ID,
+    ]);
+
+    // Oldest first, and nothing on the CLI turns
+    // that around, so whatever limit it sends —
+    // ten, unless it is told otherwise — takes
+    // from the old end and drops the newest
+    // failure, the one somebody is looking for.
+    const page = await client.listWorkflows({ status: 'ERROR', limit: 1 });
+    expect(page.map((workflow) => workflow.workflowID)).toEqual([WORKFLOW_ID]);
   });
 });

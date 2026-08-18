@@ -77,7 +77,11 @@ cd /app
 export SYSDB="${DBOS_SYSTEM_DATABASE_URL:-$DATABASE_URL}"
 
 # What is errored.
-./node_modules/.bin/dbos workflow list --status ERROR --sys-db-url "$SYSDB"
+./node_modules/.bin/dbos workflow list --status ERROR --limit 100 \
+  --sys-db-url "$SYSDB"
+
+# The one from that listing you are here for.
+export WF="<workflowID>"
 
 # Which step failed: the one with a non-null
 # `error`. Note its `functionID`.
@@ -86,6 +90,17 @@ export SYSDB="${DBOS_SYSTEM_DATABASE_URL:-$DATABASE_URL}"
 # Run it again from that step, under a new id.
 ./node_modules/.bin/dbos workflow fork "$WF" --step 2 --sys-db-url "$SYSDB"
 ```
+
+Pass `--limit`. Left off, the CLI sends 10, and the listing is oldest
+first with no flag anywhere to turn it around — so what comes back is the
+ten oldest failures, and the newest one, which is the one you are almost
+certainly here for, is the one you do not see. It exits cleanly and says
+nothing about what it left out.
+
+Set `$WF` yourself, from that listing. `workflow steps` on an id it does
+not have prints `undefined` and exits 0 — so `undefined` means the id is
+wrong, not that the workflow ran no steps. `fork` at least stops with an
+error.
 
 Spell `--status` and `--step` out. Both are `-S` in short form — on `list`
 and on `fork` respectively — and they are unrelated options, which is a
@@ -110,7 +125,7 @@ filter, so on a large broadcast that is thousands of entries. Narrow it:
 
 ```sh
 ./node_modules/.bin/dbos workflow steps "$WF" --sys-db-url "$SYSDB" |
-  node -pe 'JSON.parse(require("fs").readFileSync(0)).filter(s=>s.error)'
+  node -pe 'JSON.parse(require("fs").readFileSync(0)).filter(s=>s.error!==null)'
 ```
 
 A forked workflow runs on DBOS's own internal queue rather than `email`,
