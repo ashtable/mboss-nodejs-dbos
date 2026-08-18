@@ -120,6 +120,22 @@ describe('broadcastSend', () => {
     expect(api.statusOf('bc_1', 'sub_bounced_then_back')).toBe('sent');
   });
 
+  it('sends to a bounced address when the audience asks for one', async () => {
+    // Set membership is the whole rule. A
+    // suppression list keyed on 'bounced' would
+    // quietly overrule the audience an admin
+    // chose, and a re-engagement send would mail
+    // nobody at all.
+    const { api, deps } = seed([recipient('sub_1', 'bounced')], {
+      audience: ['bounced'],
+    });
+
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    expect(api.statusOf('bc_1', 'sub_1')).toBe('sent');
+    expect(mailer.toAddress('sub_1@example.com')).toHaveLength(1);
+  });
+
   it('sends to a paused subscriber when the audience includes paused', async () => {
     const { api, deps } = seed([recipient('sub_1', 'paused')], {
       audience: ['subscribed', 'paused'],
