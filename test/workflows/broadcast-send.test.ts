@@ -261,6 +261,25 @@ describe('broadcastSend', () => {
     expect(broadcastFetches(api)).toHaveLength(2);
   });
 
+  it('gives up on an internal-API call only after eight attempts', async () => {
+    // Three attempts a second apart is three
+    // seconds of patience for the one service
+    // these calls reach, and it is gone for tens
+    // of seconds every time it ships.
+    const { api, deps } = seed([recipient('sub_1')]);
+    api.failNextCalls(
+      'getBroadcast',
+      20,
+      new InternalApiError(503, 'Service Unavailable'),
+    );
+
+    await expect(
+      broadcastSend(deps, { broadcastId: 'bc_1' }),
+    ).rejects.toThrow();
+
+    expect(broadcastFetches(api)).toHaveLength(8);
+  });
+
   it('does not retry an internal-API call that answered 404', async () => {
     // A 404 for a broadcast id will be a 404 next
     // time too. Retrying it only delays the

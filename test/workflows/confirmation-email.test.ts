@@ -1,6 +1,7 @@
 import { parseKeyRing, verifyLink } from '@mboss/core/signed-links';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { InternalApiError } from '../../src/api/internal-client.js';
 import type { WorkerDeps } from '../../src/deps.js';
 import { confirmationEmail } from '../../src/workflows/confirmation-email.js';
 import { FakeInternalApi } from '../fakes/fake-internal-api.js';
@@ -114,6 +115,24 @@ describe('confirmationEmail', () => {
     expect(steps.every((step) => 'retriesAllowed' in step.config)).toBe(true);
   });
 
+  it('outlasts a sibling API redeploy while fetching the subscriber', async () => {
+    api.failNextCalls(
+      'getSubscriber',
+      7,
+      new InternalApiError(503, 'Service Unavailable'),
+    );
+
+    await confirmationEmail(deps, { subscriberId: 'sub_1' });
+
+    // This is the workflow that cannot fail
+    // cheaply. An error here leaves the send time
+    // unset, and the id the API derives from it is
+    // the one every later signup derives, so the
+    // dead workflow absorbs all of them.
+    expect(mailer.sent).toHaveLength(1);
+    expect(api.confirmationSent).toEqual(['sub_1']);
+  });
+
   it('retries a send the provider failed with a server error', async () => {
     mailer.refuseOnce('pat@stmarks.org', providerError(503));
 
@@ -121,6 +140,21 @@ describe('confirmationEmail', () => {
 
     expect(mailer.attempted).toHaveLength(2);
     expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('gives up on a send after three attempts, whatever the API budget is', async () => {
+    mailer.refuse('pat@stmarks.org', providerError(503));
+
+    await expect(
+      confirmationEmail(deps, { subscriberId: 'sub_1' }),
+    ).rejects.toThrow('provider said 503');
+
+    // A message the provider keeps refusing is not
+    // a service that is briefly away. Waiting
+    // longer only delays a failure someone has to
+    // see, and every extra attempt is another
+    // chance at a duplicate landing in an inbox.
+    expect(mailer.attempted).toHaveLength(3);
   });
 
   it('does not retry a message the provider rejected', async () => {
