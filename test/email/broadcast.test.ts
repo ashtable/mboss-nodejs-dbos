@@ -69,6 +69,27 @@ describe('renderBroadcastEmail', () => {
     expect(minimal.html).not.toContain('<img');
   });
 
+  it('escapes the teaser image URL into the src attribute', () => {
+    // The URL is admin-supplied and the schema
+    // that carries it validates without altering
+    // it, so a quote in it would end the attribute
+    // and start another one. A bare `&` is the
+    // everyday case: every signed or sized CDN URL
+    // has one.
+    const message = renderBroadcastEmail({
+      to: 'pat@stmarks.org',
+      subject: SUBJECT,
+      bodyMarkdown: 'A short note.',
+      teaserImageUrl: 'https://cdn.test/t.png?w=800&sig=a"b',
+      links: null,
+    });
+
+    expect(message.html).toContain(
+      '<img src="https://cdn.test/t.png?w=800&amp;sig=a&quot;b"',
+    );
+    expect(message.html).not.toContain('sig=a"b"');
+  });
+
   it('carries the broadcast footer copy verbatim', () => {
     expect(full.html).toContain(
       "no action needed · we'll email again when there's something you " +

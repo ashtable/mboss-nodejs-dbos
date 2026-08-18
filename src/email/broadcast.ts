@@ -1,4 +1,5 @@
 import { listUnsubscribeHeaders } from '../links.js';
+import { escapeHtml } from './html.js';
 import { renderMarkdown } from './markdown.js';
 import type { EmailMessage } from './message.js';
 import { renderShell } from './shell.js';
@@ -46,7 +47,7 @@ export function renderBroadcastEmail(input: {
   const body = [renderMarkdown(input.bodyMarkdown)];
   if (input.teaserImageUrl !== null) {
     body.push(
-      `<img src="${input.teaserImageUrl}" alt="" ` +
+      `<img src="${escapeHtml(input.teaserImageUrl)}" alt="" ` +
         `style="max-width:100%;display:block;margin-top:14px">`,
     );
   }
