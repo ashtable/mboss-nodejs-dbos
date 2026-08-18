@@ -1,12 +1,7 @@
 import { parseKeyRing, verifyLink } from '@mboss/core/signed-links';
 import { describe, expect, it } from 'vitest';
 
-import {
-  listUnsubscribeHeaders,
-  manageUrl,
-  mintManageToken,
-  unsubscribeUrl,
-} from '../src/links.js';
+import { manageUrl, mintManageToken, unsubscribeUrl } from '../src/links.js';
 import { FIXED_NOW, TEST_LINK_KEYS } from './helpers/fixtures.js';
 
 describe('link URLs', () => {
@@ -20,19 +15,6 @@ describe('link URLs', () => {
     expect(unsubscribeUrl('https://mboss.dev', 'tok-1')).toBe(
       'https://mboss.dev/api/unsubscribe/tok-1',
     );
-  });
-});
-
-describe('listUnsubscribeHeaders', () => {
-  it('spells out both RFC 8058 headers', () => {
-    expect(
-      listUnsubscribeHeaders('https://mboss.dev/api/unsubscribe/tok-1'),
-    ).toEqual({
-      'List-Unsubscribe':
-        '<https://mboss.dev/api/unsubscribe/tok-1>, ' +
-        '<mailto:unsubscribe@mboss.dev>',
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-    });
   });
 });
 

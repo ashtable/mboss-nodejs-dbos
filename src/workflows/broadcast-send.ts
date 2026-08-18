@@ -1,4 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { renderBroadcastEmail } from '@mboss/core/email';
 import type {
   DeliveryFlipRequest,
   InternalBroadcastResponse,
@@ -6,7 +7,6 @@ import type {
 } from '@mboss/zod';
 
 import type { WorkerDeps } from '../deps.js';
-import { renderBroadcastEmail } from '../email/broadcast.js';
 import { manageUrl, mintManageToken, unsubscribeUrl } from '../links.js';
 import { RETRY_THE_API } from './retry.js';
 

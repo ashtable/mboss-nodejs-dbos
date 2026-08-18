@@ -1,8 +1,8 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { renderBroadcastEmail } from '@mboss/core/email';
 import { TestSendRequestSchema } from '@mboss/zod';
 
 import type { WorkerDeps } from '../deps.js';
-import { renderBroadcastEmail } from '../email/broadcast.js';
 
 /**
  * Puts a draft broadcast in front of the person
