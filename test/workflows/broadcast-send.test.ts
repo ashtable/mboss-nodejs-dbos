@@ -2,6 +2,7 @@ import { DeliveryFlipRequestSchema } from '@mboss/zod';
 import type { InternalRecipient, SubscriberStatus } from '@mboss/zod';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { InternalApiError } from '../../src/api/internal-client.js';
 import type { WorkerDeps } from '../../src/deps.js';
 import { broadcastSend } from '../../src/workflows/broadcast-send.js';
 import { FakeInternalApi } from '../fakes/fake-internal-api.js';
@@ -49,6 +50,11 @@ function seed(
 
 function stepNames(): string[] {
   return steps.map((step) => step.name);
+}
+
+/** Every attempt at the broadcast fetch, retries included. */
+function broadcastFetches(api: FakeInternalApi): string[] {
+  return api.calls.filter((call) => call.startsWith('getBroadcast'));
 }
 
 beforeEach(() => {
@@ -194,6 +200,28 @@ describe('broadcastSend', () => {
     await broadcastSend(deps, { broadcastId: 'bc_1' });
 
     expect(steps.every((step) => 'retriesAllowed' in step.config)).toBe(true);
+  });
+
+  it('retries an internal-API call that answered with a server error', async () => {
+    const { api, deps } = seed([recipient('sub_1')]);
+    api.failNextCall('getBroadcast', new InternalApiError(503, 'nope'));
+
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    expect(broadcastFetches(api)).toHaveLength(2);
+  });
+
+  it('does not retry an internal-API call that answered 404', async () => {
+    // A 404 for a broadcast id will be a 404 next
+    // time too. Retrying it only delays the
+    // failure the admin needs to see.
+    const { api, deps } = seed([]);
+
+    await expect(
+      broadcastSend(deps, { broadcastId: 'missing' }),
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(broadcastFetches(api)).toHaveLength(1);
   });
 
   it('does not retry the per-recipient send', async () => {

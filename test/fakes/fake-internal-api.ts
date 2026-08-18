@@ -16,6 +16,13 @@ import {
 } from '../../src/api/internal-client.js';
 
 /**
+ * The calls a test can arm to fail. Naming them
+ * in a union keeps the arming honest: a route
+ * that does not check is not on the list.
+ */
+type FailableCall = 'getBroadcast' | 'flipDelivery';
+
+/**
  * An in-memory stand-in for the API's internal
  * routes, modelling the two behaviours the worker
  * is built around.
@@ -39,8 +46,27 @@ export class FakeInternalApi implements InternalApi {
   private readonly recipients = new Map<string, InternalRecipient[]>();
   private readonly settled = new Map<string, DeliveryStatus>();
   private readonly raced = new Map<string, DeliveryStatus>();
+  private readonly armedFailures = new Map<FailableCall, Error>();
 
   constructor(private readonly pageSize = 100) {}
+
+  /**
+   * Makes the next call of that kind throw, and
+   * only the next one — an API pod restarting, a
+   * proxy answering 502, a connection reset. The
+   * attempt is still recorded, so a test can count
+   * how many times the worker tried.
+   */
+  failNextCall(call: FailableCall, error: Error): void {
+    this.armedFailures.set(call, error);
+  }
+
+  private throwIfArmed(call: FailableCall): void {
+    const armed = this.armedFailures.get(call);
+    if (armed === undefined) return;
+    this.armedFailures.delete(call);
+    throw armed;
+  }
 
   seedSubscriber(subscriber: InternalSubscriberResponse): void {
     this.subscribers.set(subscriber.id, subscriber);
@@ -90,6 +116,7 @@ export class FakeInternalApi implements InternalApi {
 
   async getBroadcast(id: string): Promise<InternalBroadcastResponse> {
     this.calls.push(`getBroadcast:${id}`);
+    this.throwIfArmed('getBroadcast');
     const broadcast = this.broadcasts.get(id);
     if (!broadcast) throw new InternalApiError(404, 'Not Found');
     return broadcast;
@@ -127,6 +154,7 @@ export class FakeInternalApi implements InternalApi {
     flip: DeliveryFlipRequest,
   ): Promise<DeliveryFlipResponse> {
     this.calls.push(`flipDelivery:${broadcastId}:${flip.subscriberId}`);
+    this.throwIfArmed('flipDelivery');
     this.flips.push(flip);
 
     const key = `${broadcastId}:${flip.subscriberId}`;

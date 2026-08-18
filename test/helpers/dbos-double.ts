@@ -62,6 +62,20 @@ export const DBOS = {
     calls.push({ kind: 'registerQueue', name, options });
   },
 
+  /**
+   * The real SDK's retry loop with the backoff
+   * sleeps left out: try the body, and on a
+   * failure try again while the policy allows it
+   * and attempts remain. Retries are off unless
+   * the step asks for them, and `maxAttempts`
+   * defaults to three, both as the SDK has it.
+   *
+   * A step that exhausts its attempts rethrows the
+   * last error where the SDK wraps the run of them
+   * in an error of its own. Nothing here turns on
+   * which of the two comes back — only on whether
+   * the call was made again at all.
+   */
   async runStep<Return>(
     fn: () => Promise<Return>,
     config: { name?: string } & Record<string, unknown>,
@@ -69,7 +83,21 @@ export const DBOS = {
     steps.push({ name: config.name ?? '', config: { ...config } });
     stepDepth += 1;
     try {
-      return await fn();
+      const maxAttempts =
+        config['retriesAllowed'] === true
+          ? ((config['maxAttempts'] as number | undefined) ?? 3)
+          : 1;
+      const shouldRetry = config['shouldRetry'] as
+        ((error: unknown) => boolean) | undefined;
+
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await fn();
+        } catch (error) {
+          if (attempt >= maxAttempts) throw error;
+          if (shouldRetry !== undefined && !shouldRetry(error)) throw error;
+        }
+      }
     } finally {
       stepDepth -= 1;
     }

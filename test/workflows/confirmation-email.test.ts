@@ -39,6 +39,16 @@ beforeEach(() => {
   };
 });
 
+/**
+ * What the provider throws when it refuses a
+ * message: an ordinary error carrying the HTTP
+ * status on `code`, which is where SendGrid's own
+ * error type puts it.
+ */
+function providerError(code: number): Error {
+  return Object.assign(new Error(`provider said ${code}`), { code });
+}
+
 /** The `/u/<token>` the sent email points at. */
 function manageTokenIn(html: string): string {
   return /https:\/\/mboss\.dev\/u\/([A-Za-z0-9_.-]+)/.exec(html)?.[1] ?? '';
@@ -102,6 +112,28 @@ describe('confirmationEmail', () => {
     // otherwise, so an unset policy is a silent
     // decision rather than no decision.
     expect(steps.every((step) => 'retriesAllowed' in step.config)).toBe(true);
+  });
+
+  it('retries a send the provider failed with a server error', async () => {
+    mailer.refuseOnce('pat@stmarks.org', providerError(503));
+
+    await confirmationEmail(deps, { subscriberId: 'sub_1' });
+
+    expect(mailer.attempted).toHaveLength(2);
+    expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('does not retry a message the provider rejected', async () => {
+    // A 400 is a complaint about the message
+    // itself. Sending the same one again gets the
+    // same answer, three times as slowly.
+    mailer.refuse('pat@stmarks.org', providerError(400));
+
+    await expect(
+      confirmationEmail(deps, { subscriberId: 'sub_1' }),
+    ).rejects.toMatchObject({ code: 400 });
+
+    expect(mailer.attempted).toHaveLength(1);
   });
 
   it('lets a failed send fail the workflow', async () => {
