@@ -114,7 +114,7 @@ export function createTwilioEmailMailer(
       if (response.status !== 202)
         throw new MailSendError(
           response.status,
-          reason(payload, response.status),
+          refusalMessage(payload, response.status),
         );
 
       return SendAcceptedSchema.parse(payload);
@@ -143,8 +143,13 @@ export function isTransientSendFailure(error: unknown): boolean {
   return code === 429 || code >= 500;
 }
 
-/** The provider's own wording for a refusal. */
-function reason(payload: unknown, status: number): string {
+/**
+ * The provider's own wording for a refusal, or the
+ * bare status when it offered none. Shared with the
+ * status reader: one provider, one way of reading
+ * what it said no with.
+ */
+export function refusalMessage(payload: unknown, status: number): string {
   if (typeof payload === 'object' && payload !== null) {
     const shape = payload as { message?: unknown };
     if (typeof shape.message === 'string') return shape.message;

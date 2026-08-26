@@ -2,7 +2,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { renderConfirmationEmail } from '@mboss/core/email';
 import type { InternalSubscriberResponse } from '@mboss/zod';
 
-import type { WorkerDeps } from '../deps.js';
+import type { SenderDeps, WorkerDeps } from '../deps.js';
 import { isTransientSendFailure } from '../email/mailer.js';
 import type { SendReceipt } from '../email/mailer.js';
 import { manageUrl, mintManageToken } from '../links.js';
@@ -24,7 +24,7 @@ export type ConfirmationEmailInput = {
  * in two repos and let them disagree.
  */
 export async function confirmationEmail(
-  deps: WorkerDeps,
+  deps: SenderDeps,
   input: ConfirmationEmailInput,
 ): Promise<void> {
   const subscriber = await DBOS.runStep(
@@ -38,7 +38,7 @@ export async function confirmationEmail(
   // of it is merely odd. In a broadcast the trade
   // runs the other way — a failure there lands on
   // the delivery row where an admin can see it.
-  await DBOS.runStep(() => sendConfirmation(deps, subscriber), {
+  const receipt = await DBOS.runStep(() => sendConfirmation(deps, subscriber), {
     name: 'send-confirmation',
     retriesAllowed: true,
     maxAttempts: 3,
@@ -50,6 +50,15 @@ export async function confirmationEmail(
   await DBOS.runStep(() => deps.api.recordConfirmationSent(subscriber.id), {
     name: 'record-confirmation-sent',
     ...RETRY_THE_API,
+  });
+
+  // Last, and in the workflow body rather than in
+  // a step, because DBOS will not start a workflow
+  // from inside one. A send the provider refused
+  // never gets here, which is right: there is no
+  // operation to poll.
+  await deps.startBounceScan({
+    sends: [{ email: subscriber.email, operationId: receipt.operationId }],
   });
 }
 

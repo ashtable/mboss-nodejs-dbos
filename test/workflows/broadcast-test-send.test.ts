@@ -5,7 +5,7 @@ import { broadcastTestSend } from '../../src/workflows/broadcast-test-send.js';
 import { FakeInternalApi } from '../fakes/fake-internal-api.js';
 import { FakeMailer } from '../fakes/fake-mailer.js';
 import { testDeps } from '../helpers/deps.js';
-import { reset } from '../helpers/dbos-double.js';
+import { calls, reset } from '../helpers/dbos-double.js';
 
 vi.mock(
   '@dbos-inc/dbos-sdk',
@@ -47,6 +47,17 @@ describe('broadcastTestSend', () => {
     // put the draft in front of the person
     // writing it.
     expect(api.calls).toEqual([]);
+  });
+
+  it('starts no bounce scan', async () => {
+    await broadcastTestSend(deps, REQUEST);
+
+    // It cannot: this workflow is handed
+    // `WorkerDeps`, which has no way to start one.
+    // There is no subscriber behind the address
+    // and no delivery row, so a bounce found here
+    // would have nothing to act on.
+    expect(calls).toEqual([]);
   });
 
   it('sends without a manage link or unsubscribe headers', async () => {

@@ -2,6 +2,7 @@ import {
   BroadcastCompleteResponseSchema,
   ConfirmationSentResponseSchema,
   DeliveryFlipResponseSchema,
+  EmailEventsResponseSchema,
   InternalBroadcastResponseSchema,
   InternalRecipientsResponseSchema,
   InternalSubscriberResponseSchema,
@@ -11,6 +12,8 @@ import type {
   ConfirmationSentResponse,
   DeliveryFlipRequest,
   DeliveryFlipResponse,
+  EmailEventsRequest,
+  EmailEventsResponse,
   InternalBroadcastResponse,
   InternalRecipientsResponse,
   InternalSubscriberResponse,
@@ -20,7 +23,7 @@ import type { z } from 'zod';
 /**
  * The worker holds no application data of its
  * own: everything it knows about a subscriber or
- * a broadcast comes through these six routes.
+ * a broadcast comes through these seven routes.
  *
  * Every response is parsed with the same schema
  * the API answers with, so a drift between the
@@ -41,6 +44,7 @@ export interface InternalApi {
     flip: DeliveryFlipRequest,
   ): Promise<DeliveryFlipResponse>;
   completeBroadcast(id: string): Promise<BroadcastCompleteResponse>;
+  postEmailEvents(events: EmailEventsRequest): Promise<EmailEventsResponse>;
 }
 
 /**
@@ -137,6 +141,9 @@ export function createInternalApi(config: {
         BroadcastCompleteResponseSchema,
         {},
       ),
+
+    postEmailEvents: (events) =>
+      call('/internal/v1/email-events', EmailEventsResponseSchema, events),
   };
 }
 

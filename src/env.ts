@@ -14,7 +14,7 @@ const baseUrlSchema = z
 
 /**
  * The six values the worker cannot run without,
- * plus four with defaults. `MAIL_FROM` and
+ * plus five with defaults. `MAIL_FROM` and
  * `SITE_URL` default to production because that
  * is the only place they are ever different from
  * the literal in the design.
@@ -35,6 +35,27 @@ const EnvSchema = z
     // point this at a mail sink and get the same
     // paths.
     TWILIO_EMAIL_BASE_URL: baseUrlSchema.default('https://comms.twilio.com'),
+    // When the bounce scan looks at each send, in
+    // seconds after the sending workflow enqueued
+    // it — offsets, not gaps, so the scan sleeps
+    // the difference between one and the last.
+    // They must increase for that subtraction to
+    // be a duration, and both have to land inside
+    // the provider's retention window or there is
+    // nothing left to read.
+    BOUNCE_SCAN_DELAYS_S: z
+      .string()
+      .default('3600,172800')
+      .transform((value) => value.split(',').map((part) => Number(part.trim())))
+      .refine(
+        (delays) =>
+          delays.length > 0 &&
+          delays.every((seconds) => Number.isInteger(seconds) && seconds > 0) &&
+          delays.every(
+            (seconds, at) => at === 0 || seconds > (delays[at - 1] ?? 0),
+          ),
+        'expected increasing, comma-separated whole seconds',
+      ),
     MAIL_FROM: z.string().min(1).default('hello@mboss.dev'),
     SITE_URL: baseUrlSchema.default('https://mboss.dev'),
   })

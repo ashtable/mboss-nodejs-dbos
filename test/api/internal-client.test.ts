@@ -22,7 +22,7 @@ type Recorded = {
  * Every route answers 200 with a body of the
  * right shape unless a test says otherwise, so a
  * test that cares about one route does not have
- * to describe the other five.
+ * to describe the other six.
  */
 function bodyFor(url: string): unknown {
   if (url.endsWith('/confirmation-sent'))
@@ -31,9 +31,17 @@ function bodyFor(url: string): unknown {
   if (url.endsWith('/deliveries')) return { status: 'sent' };
   if (url.endsWith('/complete'))
     return { status: 'sent', sentCount: 1, failedCount: 0, skippedCount: 0 };
+  if (url.endsWith('/email-events')) return { processed: 1, bounced: 1 };
   if (url.includes('/broadcasts/')) return BROADCAST;
   return SUBSCRIBER;
 }
+
+/** One bounce, as the scan reports it. */
+const BOUNCE = {
+  email: 'pat@stmarks.org',
+  event: 'bounce',
+  timestamp: 1786881600,
+} as const;
 
 function stub(
   respond: (url: string) => { status: number; body: unknown } = (url) => ({
@@ -101,6 +109,11 @@ const everyCall: [string, (api: InternalApi) => Promise<unknown>, string][] = [
     (api) => api.completeBroadcast('bc_1'),
     'http://api.test/internal/v1/broadcasts/bc_1/complete',
   ],
+  [
+    'postEmailEvents',
+    (api) => api.postEmailEvents([BOUNCE]),
+    'http://api.test/internal/v1/email-events',
+  ],
 ];
 
 describe('the internal API client', () => {
@@ -157,6 +170,31 @@ describe('the internal API client', () => {
     expect(calls[0]?.body).toBe(
       '{"subscriberId":"sub_1","status":"failed","error":"nope"}',
     );
+  });
+
+  it('sends the bounce batch as its wire body', async () => {
+    const { calls, api } = stub();
+
+    await api.postEmailEvents([BOUNCE]);
+
+    // The batch goes over verbatim: the API is the
+    // one place that decides what a bounce does to
+    // a subscriber, and reshaping it here would
+    // put half that rule in this repo.
+    expect(calls[0]?.body).toBe(
+      '[{"email":"pat@stmarks.org","event":"bounce","timestamp":1786881600}]',
+    );
+  });
+
+  it('reads back what the API did with the batch', async () => {
+    const { api } = stub(() => ({
+      status: 200,
+      body: { processed: 2, bounced: 1 },
+    }));
+
+    await expect(
+      api.postEmailEvents([BOUNCE, { ...BOUNCE, email: 'sam@stmarks.org' }]),
+    ).resolves.toEqual({ processed: 2, bounced: 1 });
   });
 
   it('validates responses against the shared schemas', async () => {

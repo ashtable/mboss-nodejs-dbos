@@ -81,12 +81,21 @@ describe('confirmationEmail against a real system database', () => {
     const rows = await queryTestDatabase<{
       name: string;
       class_name: string | null;
-    }>(`SELECT name, class_name FROM dbos.workflow_status`);
+    }>(`SELECT name, class_name FROM dbos.workflow_status ORDER BY name`);
 
     // The API's enqueue never sends a class name.
     // Register this with one and the enqueue
     // matches nothing at all: the row sits in the
     // queue and no email is ever sent.
-    expect(rows).toEqual([{ name: 'confirmationEmail', class_name: null }]);
+    //
+    // The scan is the second row because a
+    // finished confirmation always leaves one
+    // behind: there is no bounce webhook, so the
+    // only way this send is ever heard about again
+    // is the poll it just enqueued.
+    expect(rows).toEqual([
+      { name: 'bounceScan', class_name: null },
+      { name: 'confirmationEmail', class_name: null },
+    ]);
   });
 });
