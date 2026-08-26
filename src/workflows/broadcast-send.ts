@@ -134,8 +134,8 @@ export async function broadcastSend(
  * That window is as narrow as a crash — returning
  * the outcome is the next thing that happens —
  * and closing it entirely would take a
- * provider-side idempotency key SendGrid does not
- * offer. One duplicated progress note is a far
+ * provider-side idempotency key Twilio Email does
+ * not offer. One duplicated progress note is a far
  * smaller harm than a broadcast that stalls.
  */
 async function attemptSend(

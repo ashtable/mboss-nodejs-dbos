@@ -1,6 +1,6 @@
 import type { EmailMessage } from '@mboss/core/email';
 
-import type { Mailer } from '../../src/email/mailer.js';
+import type { Mailer, SendReceipt } from '../../src/email/mailer.js';
 
 /**
  * Records what would have been sent, and refuses
@@ -15,6 +15,7 @@ export class FakeMailer implements Mailer {
   readonly sent: EmailMessage[] = [];
   private readonly refusals = new Map<string, Error>();
   private readonly oneOffRefusals = new Map<string, Error>();
+  private nextOperation = 0;
 
   refuse(address: string, error: Error): void {
     this.refusals.set(address, error);
@@ -33,7 +34,12 @@ export class FakeMailer implements Mailer {
     return this.sent.filter((message) => message.to === address);
   }
 
-  async send(message: EmailMessage): Promise<void> {
+  /**
+   * Every accepted send gets its own operation
+   * id, the way the provider mints one, so a test
+   * can tell which recipient a receipt belongs to.
+   */
+  async send(message: EmailMessage): Promise<SendReceipt> {
     this.attempted.push(message);
 
     const oneOff = this.oneOffRefusals.get(message.to);
@@ -45,5 +51,12 @@ export class FakeMailer implements Mailer {
     const refusal = this.refusals.get(message.to);
     if (refusal) throw refusal;
     this.sent.push(message);
+
+    this.nextOperation += 1;
+    const operationId = `op_${this.nextOperation}`;
+    return {
+      operationId,
+      operationLocation: `https://sink.test/v1/Emails/Operations/${operationId}`,
+    };
   }
 }

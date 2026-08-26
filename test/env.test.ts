@@ -7,7 +7,8 @@ const complete = {
   API_BASE_URL: 'http://localhost:3001',
   INTERNAL_API_TOKEN: 'dev-internal-api-token',
   LINK_KEYS: `k1:${'a'.repeat(64)}`,
-  SENDGRID_API_KEY: 'SG.dev-sendgrid-key',
+  TWILIO_API_KEY: 'SK_test',
+  TWILIO_API_SECRET: 'secret_test',
 };
 
 function messageThrownBy(read: () => unknown): string {
@@ -43,10 +44,13 @@ describe('readEnv', () => {
     ).toBe(elsewhere);
   });
 
-  it('defaults the SendGrid base URL, the sender and the site URL', () => {
+  it('defaults the mail API, the sender and the site URL', () => {
     const env = readEnv(complete);
 
-    expect(env.SENDGRID_BASE_URL).toBe('https://api.sendgrid.com');
+    // Left alone, the worker talks to the real
+    // provider. A local run points this at a mail
+    // sink instead.
+    expect(env.TWILIO_EMAIL_BASE_URL).toBe('https://comms.twilio.com');
     expect(env.MAIL_FROM).toBe('hello@mboss.dev');
     expect(env.SITE_URL).toBe('https://mboss.dev');
   });

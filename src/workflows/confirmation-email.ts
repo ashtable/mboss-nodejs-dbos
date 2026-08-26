@@ -4,6 +4,7 @@ import type { InternalSubscriberResponse } from '@mboss/zod';
 
 import type { WorkerDeps } from '../deps.js';
 import { isTransientSendFailure } from '../email/mailer.js';
+import type { SendReceipt } from '../email/mailer.js';
 import { manageUrl, mintManageToken } from '../links.js';
 import { RETRY_THE_API } from './retry.js';
 
@@ -57,18 +58,24 @@ export async function confirmationEmail(
  * step alongside the send rather than in the
  * workflow body, where a replay would produce a
  * different token every time.
+ *
+ * The provider's receipt comes back rather than
+ * being dropped: the provider accepting a message
+ * is not the same as anyone receiving it, and the
+ * operation id is the only handle on this send
+ * afterwards.
  */
 async function sendConfirmation(
   deps: WorkerDeps,
   subscriber: InternalSubscriberResponse,
-): Promise<void> {
+): Promise<SendReceipt> {
   const token = mintManageToken(deps.keyRing, {
     subscriberId: subscriber.id,
     tokenVersion: subscriber.tokenVersion,
     now: deps.now(),
   });
 
-  await deps.mailer.send(
+  return deps.mailer.send(
     renderConfirmationEmail({
       to: subscriber.email,
       manageUrl: manageUrl(deps.siteUrl, token),

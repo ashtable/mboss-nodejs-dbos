@@ -13,7 +13,7 @@ const baseUrlSchema = z
   .transform((value) => value.replace(/\/+$/, ''));
 
 /**
- * The five values the worker cannot run without,
+ * The six values the worker cannot run without,
  * plus four with defaults. `MAIL_FROM` and
  * `SITE_URL` default to production because that
  * is the only place they are ever different from
@@ -26,8 +26,15 @@ const EnvSchema = z
     API_BASE_URL: baseUrlSchema,
     INTERNAL_API_TOKEN: z.string().min(1),
     LINK_KEYS: z.string().min(1),
-    SENDGRID_API_KEY: z.string().min(1),
-    SENDGRID_BASE_URL: baseUrlSchema.default('https://api.sendgrid.com'),
+    // The mail API's credentials, as a key pair:
+    // the key's SID, then its secret.
+    TWILIO_API_KEY: z.string().min(1),
+    TWILIO_API_SECRET: z.string().min(1),
+    // The API root, without the version segment —
+    // the client appends that, so a local run can
+    // point this at a mail sink and get the same
+    // paths.
+    TWILIO_EMAIL_BASE_URL: baseUrlSchema.default('https://comms.twilio.com'),
     MAIL_FROM: z.string().min(1).default('hello@mboss.dev'),
     SITE_URL: baseUrlSchema.default('https://mboss.dev'),
   })
@@ -48,9 +55,9 @@ export type Env = z.infer<typeof EnvSchema>;
 /**
  * Throws with every missing or malformed variable
  * named at once. A worker that boots without its
- * key ring or its SendGrid key can do nothing but
- * fail one workflow at a time, so this failure
- * has to be loud and total rather than
+ * key ring or its mail credentials can do nothing
+ * but fail one workflow at a time, so this
+ * failure has to be loud and total rather than
  * per-variable and lazy.
  */
 export function readEnv(source: NodeJS.ProcessEnv): Env {

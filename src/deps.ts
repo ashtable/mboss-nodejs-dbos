@@ -3,7 +3,7 @@ import type { LinkKeyRing } from '@mboss/core/signed-links';
 
 import { createInternalApi } from './api/internal-client.js';
 import type { InternalApi } from './api/internal-client.js';
-import { createSendGridMailer } from './email/mailer.js';
+import { createTwilioEmailMailer } from './email/mailer.js';
 import type { Mailer } from './email/mailer.js';
 import type { Env } from './env.js';
 
@@ -33,9 +33,10 @@ export function buildDeps(env: Env): WorkerDeps {
       baseUrl: env.API_BASE_URL,
       token: env.INTERNAL_API_TOKEN,
     }),
-    mailer: createSendGridMailer({
-      apiKey: env.SENDGRID_API_KEY,
-      baseUrl: env.SENDGRID_BASE_URL,
+    mailer: createTwilioEmailMailer({
+      apiKey: env.TWILIO_API_KEY,
+      apiSecret: env.TWILIO_API_SECRET,
+      baseUrl: env.TWILIO_EMAIL_BASE_URL,
       from: env.MAIL_FROM,
     }),
     keyRing: parseKeyRing(env.LINK_KEYS),

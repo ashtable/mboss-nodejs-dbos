@@ -20,8 +20,6 @@
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "^4.25.14",
-    "@sendgrid/client": "^8.1.6",
-    "@sendgrid/mail": "^8.1.6",
     "tsx": "^4.23.12",
     "zod": "^4.4.3"
   },

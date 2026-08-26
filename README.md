@@ -2,8 +2,8 @@
 
 The mBoss DBOS worker: the one process that sends email.
 
-It holds the SendGrid key — no other service does — and it owns no
-application data. Everything it needs about a subscriber or a broadcast it
+It holds the Twilio Email credentials — no other service does — and it owns
+no application data. Everything it needs about a subscriber or a broadcast it
 reads over the API's `/internal/v1/*` routes; the only Postgres it touches
 is DBOS's own `dbos` schema, which DBOS creates at launch.
 
@@ -28,8 +28,9 @@ contract with that repo — nothing enforces the match but the tests.
 | `API_BASE_URL`             | yes      | Where `/internal/v1/*` lives.                                                                              |
 | `INTERNAL_API_TOKEN`       | yes      | Bearer token for those routes; must match the API's.                                                       |
 | `LINK_KEYS`                | yes      | The same signing ring the API verifies with — this service mints the manage links.                         |
-| `SENDGRID_API_KEY`         | yes      |                                                                                                            |
-| `SENDGRID_BASE_URL`        | no       | Defaults to `https://api.sendgrid.com`. The end-to-end suite points it at a mail sink.                     |
+| `TWILIO_API_KEY`           | yes      | The API key's SID. It is the user half of the basic credentials the mailer sends.                          |
+| `TWILIO_API_SECRET`        | yes      | The secret half of the same pair.                                                                          |
+| `TWILIO_EMAIL_BASE_URL`    | no       | Defaults to `https://comms.twilio.com`. The end-to-end suite points it at a mail sink.                     |
 | `MAIL_FROM`                | no       | Defaults to `hello@mboss.dev`.                                                                             |
 | `SITE_URL`                 | no       | Defaults to `https://mboss.dev`. Manage and unsubscribe links are built from it.                           |
 | `DBOS_TEST_DATABASE_URL`   | no       | Integration suite only. It drops and recreates this database, so never name the application database here. |

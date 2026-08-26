@@ -43,8 +43,8 @@ beforeEach(() => {
 /**
  * What the provider throws when it refuses a
  * message: an ordinary error carrying the HTTP
- * status on `code`, which is where SendGrid's own
- * error type puts it.
+ * status on `code`, which is where the mailer's
+ * own `MailSendError` puts it.
  */
 function providerError(code: number): Error {
   return Object.assign(new Error(`provider said ${code}`), { code });
