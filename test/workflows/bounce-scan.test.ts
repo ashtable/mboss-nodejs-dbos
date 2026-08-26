@@ -45,6 +45,20 @@ function posts(): string[] {
   return api.calls.filter((call) => call.startsWith('postEmailEvents'));
 }
 
+/**
+ * What the SDK throws for a step that spent every
+ * attempt: one error carrying the run of them.
+ *
+ * Built by hand rather than imported, because these
+ * tests replace the SDK module wholesale — and
+ * because the double rethrows the last error flat,
+ * so this shape would otherwise never reach the
+ * code that has to recognise it.
+ */
+function exhausted(...errors: Error[]): Error {
+  return Object.assign(new Error('step spent every attempt'), { errors });
+}
+
 beforeEach(() => {
   reset();
   api = new FakeInternalApi();
@@ -177,6 +191,54 @@ describe('bounceScan', () => {
     expect(stepNames()).toEqual(['read-status:1', 'read-status:2']);
     expect(sleeps).toEqual([3600, 169200]);
     expect(api.emailEvents).toEqual([]);
+  });
+
+  it('leaves a send pending when every attempt was refused', async () => {
+    deliveryStatus.failEveryRead(
+      exhausted(
+        new MailSendError(503, 'Service Unavailable'),
+        new MailSendError(503, 'Service Unavailable'),
+      ),
+    );
+
+    // What the SDK hands back for a step that spent
+    // its attempts, rather than the last refusal on
+    // its own. Both mean the provider would not
+    // answer, so both count as pending.
+    await expect(bounceScan(deps, { sends: [PAT] })).resolves.toBeUndefined();
+
+    expect(sleeps).toEqual([3600, 169200]);
+    expect(api.emailEvents).toEqual([]);
+  });
+
+  it('lets a failure that is not the provider refusing fail the scan', async () => {
+    deliveryStatus.failEveryRead(new TypeError('read is not a function'));
+
+    // Only "the provider would not answer" reads as
+    // pending. A fault of our own, or a cancelled
+    // workflow, is not an unsettled send, and
+    // calling it pending would leave a scan that
+    // never works looking like one that is merely
+    // waiting.
+    await expect(bounceScan(deps, { sends: [PAT] })).rejects.toThrow(
+      'read is not a function',
+    );
+  });
+
+  it('fails the scan when a refused batch hid a fault of ours', async () => {
+    deliveryStatus.failEveryRead(
+      exhausted(
+        new MailSendError(503, 'Service Unavailable'),
+        new TypeError('read is not a function'),
+      ),
+    );
+
+    // One refusal among the attempts does not make
+    // the batch a refusal. The other attempt is
+    // still a bug nobody would ever hear about.
+    await expect(bounceScan(deps, { sends: [PAT] })).rejects.toThrow(
+      'spent every attempt',
+    );
   });
 });
 

@@ -2,7 +2,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import type { WorkerDeps } from '../deps.js';
 import type { DeliveryState } from '../email/delivery-status.js';
-import { isTransientSendFailure } from '../email/mailer.js';
+import { isTransientSendFailure, MailSendError } from '../email/mailer.js';
 import { EMAIL_STATUS_QUEUE } from '../worker.js';
 import { RETRY_THE_API } from './retry.js';
 
@@ -35,11 +35,11 @@ export type StartBounceScan = (input: BounceScanInput) => Promise<void>;
  * ones a receiving server takes its time over.
  *
  * The sleeps and the loop are in the workflow body
- * rather than in a step because DBOS allows a
- * durable sleep in neither a step nor anywhere
- * else — and because a sleep in a step would be an
- * ordinary timer that a restart forgets. Only the
- * read and the post are steps.
+ * rather than in a step because DBOS allows neither
+ * a durable sleep nor a workflow start from inside
+ * a step — a sleep in a step is an ordinary timer
+ * that a restart forgets. Only the read and the
+ * post are steps.
  */
 export async function bounceScan(
   deps: WorkerDeps,
@@ -108,13 +108,19 @@ export function startBounceScanOn(
  * provider that refuses that step refuses every
  * send in it — an operation it has never heard of
  * comes back as an empty list, not as an error. So
- * a read that has spent its attempts means "we
+ * a refusal that has spent its attempts means "we
  * could not tell", which is the same thing to this
  * workflow as "not settled yet": the pass counts
  * as all-pending and the next one asks again.
  * Throwing instead would strand the later pass and
  * leave a red workflow for something no operator
  * can act on.
+ *
+ * Only the provider's refusals are read that way.
+ * A cancelled workflow, or a fault of our own in
+ * the reader, is not a send that has yet to settle,
+ * and calling one "pending" would hide a scan that
+ * never works behind one that is merely waiting.
  *
  * The policy is written here rather than taken
  * from `retry.ts` because it is about the mail
@@ -150,9 +156,40 @@ async function readStates(
         shouldRetry: isTransientSendFailure,
       },
     );
-  } catch {
+  } catch (error) {
+    if (!isProviderRefusal(error)) throw error;
     return sends.map(() => 'pending');
   }
+}
+
+/**
+ * Whether a failed read was the provider saying no,
+ * rather than one of the other things that can come
+ * out of a step.
+ *
+ * A step the retry policy declined to repeat throws
+ * the refusal itself. One that spent every attempt
+ * throws an error of the SDK's own instead, which
+ * carries the attempts it made on `errors`. That
+ * one is matched by shape rather than by class:
+ * the class sits behind the SDK's error namespace,
+ * and reaching for it here would tie this file to
+ * the module the workflow tests replace wholesale.
+ *
+ * Every one of those attempts has to be a refusal.
+ * A batch where some other fault crept in is not a
+ * batch the provider merely would not answer.
+ */
+function isProviderRefusal(error: unknown): boolean {
+  if (error instanceof MailSendError) return true;
+  if (typeof error !== 'object' || error === null) return false;
+
+  const attempts = (error as { errors?: unknown }).errors;
+  return (
+    Array.isArray(attempts) &&
+    attempts.length > 0 &&
+    attempts.every((cause) => cause instanceof MailSendError)
+  );
 }
 
 /**

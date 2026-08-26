@@ -125,7 +125,7 @@ describe('confirmationEmail', () => {
     // ordering is only visible as what had already
     // run when the scan was asked for.
     expect(api.confirmationSent).toEqual(['sub_1']);
-    expect(steps.at(-1)?.name).toBe('record-confirmation-sent');
+    expect(bounceScan.stepsAtStart[0]?.at(-1)).toBe('record-confirmation-sent');
   });
 
   it('asks for no scan at all when the send failed', async () => {

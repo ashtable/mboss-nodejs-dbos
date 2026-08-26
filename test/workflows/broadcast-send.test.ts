@@ -376,8 +376,8 @@ describe('broadcastSend', () => {
     // by a workflow that can still stop at the
     // next recipient it cannot account for.
     expect(api.completeCalls).toEqual(['bc_1']);
-    expect(stepNames().at(-1)).toBe('complete');
-    expect(bounceScan.scans).toHaveLength(1);
+    expect(bounceScan.stepsAtStart).toHaveLength(1);
+    expect(bounceScan.stepsAtStart[0]?.at(-1)).toBe('complete');
   });
 
   it('asks for no scan when the run stopped early', async () => {
