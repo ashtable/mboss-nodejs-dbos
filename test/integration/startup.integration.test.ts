@@ -6,7 +6,11 @@ import {
   resetTestDatabase,
   shutdownDbos,
 } from './helpers/dbos.js';
-import { EMAIL_QUEUE, startWorker } from '../../src/worker.js';
+import {
+  EMAIL_QUEUE,
+  EMAIL_STATUS_QUEUE,
+  startWorker,
+} from '../../src/worker.js';
 import { testDeps } from '../helpers/deps.js';
 
 /**
@@ -16,7 +20,7 @@ import { testDeps } from '../helpers/deps.js';
  * launch-then-queue order in `startWorker` is
  * load-bearing rather than decorative. A doubled
  * SDK can make neither claim, which is why these
- * three tests need a real Postgres and stay out
+ * four tests need a real Postgres and stay out
  * of CI.
  */
 describe('worker startup against a real system database', () => {
@@ -71,5 +75,16 @@ describe('worker startup against a real system database', () => {
     });
 
     await expect(DBOS.retrieveQueue(EMAIL_QUEUE)).resolves.not.toBeNull();
+  });
+
+  it('registers the bounce scan queue against the system database', async () => {
+    await startWorker(testDeps(), {
+      name: 'mboss-dbos-test',
+      systemDatabaseUrl,
+    });
+
+    await expect(
+      DBOS.retrieveQueue(EMAIL_STATUS_QUEUE),
+    ).resolves.not.toBeNull();
   });
 });

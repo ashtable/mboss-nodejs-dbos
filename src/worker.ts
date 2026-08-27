@@ -13,6 +13,14 @@ import { registerWorkflows } from './workflows/register.js';
  */
 export const EMAIL_QUEUE = 'email';
 
+/**
+ * Bounce scans get their own queue because they
+ * spend almost all of their life asleep. Uncapped,
+ * on purpose: a scan waiting two days must never
+ * hold the one slot every outgoing email shares.
+ */
+export const EMAIL_STATUS_QUEUE = 'email-status';
+
 export type WorkerConfig = {
   name: string;
   systemDatabaseUrl: string;
@@ -37,4 +45,5 @@ export async function startWorker(
   registerWorkflows(deps);
   await DBOS.launch();
   await DBOS.registerQueue(EMAIL_QUEUE, { workerConcurrency: 1 });
+  await DBOS.registerQueue(EMAIL_STATUS_QUEUE);
 }

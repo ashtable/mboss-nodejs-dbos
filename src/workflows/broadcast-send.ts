@@ -6,8 +6,9 @@ import type {
   InternalRecipient,
 } from '@mboss/zod';
 
-import type { WorkerDeps } from '../deps.js';
+import type { SenderDeps, WorkerDeps } from '../deps.js';
 import { manageUrl, mintManageToken, unsubscribeUrl } from '../links.js';
+import type { BounceScanInput } from './bounce-scan.js';
 import { RETRY_THE_API } from './retry.js';
 
 export type BroadcastSendInput = {
@@ -40,7 +41,7 @@ const MAX_ERROR = 2000;
  * clear, and can.
  */
 export async function broadcastSend(
-  deps: WorkerDeps,
+  deps: SenderDeps,
   input: BroadcastSendInput,
 ): Promise<void> {
   const broadcast = await DBOS.runStep(
@@ -50,6 +51,7 @@ export async function broadcastSend(
 
   let cursor: string | undefined;
   let page = 0;
+  const accepted: BounceScanInput['sends'] = [];
 
   do {
     page += 1;
@@ -73,6 +75,19 @@ export async function broadcastSend(
         () => attemptSend(deps, broadcast, row),
         { name: `send:${row.subscriberId}`, retriesAllowed: false },
       );
+
+      // Only a send the provider took has anything
+      // to poll for. Building the list here rather
+      // than re-deriving it later keeps it to the
+      // rows this run actually mailed, and the
+      // step's outcome is checkpointed, so a
+      // resume rebuilds the same list.
+      if (outcome.operationId !== undefined) {
+        accepted.push({
+          email: row.email,
+          operationId: outcome.operationId,
+        });
+      }
 
       // A flip the API will not take at all ends
       // the run, and that is the decision rather
@@ -102,7 +117,7 @@ export async function broadcastSend(
         () =>
           deps.api.flipDelivery(broadcast.id, {
             subscriberId: row.subscriberId,
-            ...outcome,
+            ...outcome.flip,
           }),
         { name: `flip:${row.subscriberId}`, ...RETRY_THE_API },
       );
@@ -115,7 +130,31 @@ export async function broadcastSend(
     name: 'complete',
     ...RETRY_THE_API,
   });
+
+  // One scan for the whole broadcast, asked for
+  // last and from the workflow body — DBOS will
+  // not start a workflow from inside a step, and a
+  // run that stopped early never reaches here, so
+  // the scan covers exactly what was mailed.
+  if (accepted.length > 0) await deps.startBounceScan({ sends: accepted });
 }
+
+/**
+ * What one attempt produced: the outcome to record
+ * on the delivery row, and — when the provider
+ * took the message — the operation to poll for a
+ * bounce later.
+ *
+ * The operation id stays out of the flip body on
+ * purpose. The API's schema does not carry one,
+ * and smuggling an extra key through a validated
+ * wire body is how a silent strip or a 400 turns
+ * up much later.
+ */
+type SendOutcome = {
+  flip: Omit<DeliveryFlipRequest, 'subscriberId'>;
+  operationId?: string;
+};
 
 /**
  * One recipient's send — the audience check, the
@@ -134,22 +173,22 @@ export async function broadcastSend(
  * That window is as narrow as a crash — returning
  * the outcome is the next thing that happens —
  * and closing it entirely would take a
- * provider-side idempotency key SendGrid does not
- * offer. One duplicated progress note is a far
+ * provider-side idempotency key Twilio Email does
+ * not offer. One duplicated progress note is a far
  * smaller harm than a broadcast that stalls.
  */
 async function attemptSend(
   deps: WorkerDeps,
   broadcast: InternalBroadcastResponse,
   row: InternalRecipient,
-): Promise<Omit<DeliveryFlipRequest, 'subscriberId'>> {
+): Promise<SendOutcome> {
   // Their status right now, not the one they were
   // in when the broadcast was composed. Someone
   // who bounced and signed up again is subscribed
   // and gets the email; someone who unsubscribed
   // mid-broadcast does not.
   if (!broadcast.audience.includes(row.currentStatus)) {
-    return { status: 'skipped' };
+    return { flip: { status: 'skipped' } };
   }
 
   try {
@@ -159,7 +198,7 @@ async function attemptSend(
       now: deps.now(),
     });
 
-    await deps.mailer.send(
+    const receipt = await deps.mailer.send(
       renderBroadcastEmail({
         to: row.email,
         subject: broadcast.subject,
@@ -172,12 +211,14 @@ async function attemptSend(
       }),
     );
 
-    return { status: 'sent' };
+    return { flip: { status: 'sent' }, operationId: receipt.operationId };
   } catch (error) {
     // The provider's own text, cut to what the
     // delivery row takes — a rejected flip would
     // lose the record of the failure as well as
     // the send.
-    return { status: 'failed', error: String(error).slice(0, MAX_ERROR) };
+    return {
+      flip: { status: 'failed', error: String(error).slice(0, MAX_ERROR) },
+    };
   }
 }

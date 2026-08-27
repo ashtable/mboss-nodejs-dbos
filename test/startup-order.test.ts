@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EMAIL_QUEUE, startWorker } from '../src/worker.js';
+import { EMAIL_QUEUE, EMAIL_STATUS_QUEUE, startWorker } from '../src/worker.js';
 import { calls, reset } from './helpers/dbos-double.js';
 import { testDeps } from './helpers/deps.js';
 
@@ -54,17 +54,36 @@ describe('startWorker', () => {
     expect(EMAIL_QUEUE).toBe('email');
   });
 
+  it('registers the bounce scan queue uncapped', () => {
+    // A scan is two days of sleeping. Capped, one
+    // of them would hold a slot that every
+    // outgoing email is waiting on.
+    expect(calls).toContainEqual({
+      kind: 'registerQueue',
+      name: EMAIL_STATUS_QUEUE,
+      options: undefined,
+    });
+    expect(EMAIL_STATUS_QUEUE).toBe('email-status');
+  });
+
   /**
-   * The other side of this contract is the three
-   * `enqueue({ workflowName: … })` literals in
-   * `mboss-nodejs-api`'s waitlist and admin
-   * routes. Nothing but these strings connects
-   * the two repos, and a typo in either one is
-   * silent: the API enqueues a name DBOS has
-   * never heard of, and no email is ever sent.
+   * Three of these names are the contract with
+   * `mboss-nodejs-api`: they are the
+   * `enqueue({ workflowName: … })` literals in its
+   * waitlist and admin routes. Nothing but the
+   * strings connects the two repos, and a typo in
+   * either one is silent — the API enqueues a name
+   * DBOS has never heard of, and no email is ever
+   * sent.
+   *
+   * `bounceScan` is the fourth, and this worker
+   * enqueues it itself. It is registered first
+   * because the senders cannot be given a way to
+   * start it until it exists.
    */
-  it('registers exactly the workflows the API enqueues', () => {
+  it('registers exactly the workflows that get enqueued', () => {
     expect(registeredNames()).toEqual([
+      'bounceScan',
       'confirmationEmail',
       'broadcastSend',
       'broadcastTestSend',

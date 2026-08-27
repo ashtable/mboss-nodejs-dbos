@@ -2,8 +2,9 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { renderConfirmationEmail } from '@mboss/core/email';
 import type { InternalSubscriberResponse } from '@mboss/zod';
 
-import type { WorkerDeps } from '../deps.js';
+import type { SenderDeps, WorkerDeps } from '../deps.js';
 import { isTransientSendFailure } from '../email/mailer.js';
+import type { SendReceipt } from '../email/mailer.js';
 import { manageUrl, mintManageToken } from '../links.js';
 import { RETRY_THE_API } from './retry.js';
 
@@ -23,7 +24,7 @@ export type ConfirmationEmailInput = {
  * in two repos and let them disagree.
  */
 export async function confirmationEmail(
-  deps: WorkerDeps,
+  deps: SenderDeps,
   input: ConfirmationEmailInput,
 ): Promise<void> {
   const subscriber = await DBOS.runStep(
@@ -37,7 +38,7 @@ export async function confirmationEmail(
   // of it is merely odd. In a broadcast the trade
   // runs the other way — a failure there lands on
   // the delivery row where an admin can see it.
-  await DBOS.runStep(() => sendConfirmation(deps, subscriber), {
+  const receipt = await DBOS.runStep(() => sendConfirmation(deps, subscriber), {
     name: 'send-confirmation',
     retriesAllowed: true,
     maxAttempts: 3,
@@ -50,6 +51,15 @@ export async function confirmationEmail(
     name: 'record-confirmation-sent',
     ...RETRY_THE_API,
   });
+
+  // Last, and in the workflow body rather than in
+  // a step, because DBOS will not start a workflow
+  // from inside one. A send the provider refused
+  // never gets here, which is right: there is no
+  // operation to poll.
+  await deps.startBounceScan({
+    sends: [{ email: subscriber.email, operationId: receipt.operationId }],
+  });
 }
 
 /**
@@ -57,18 +67,24 @@ export async function confirmationEmail(
  * step alongside the send rather than in the
  * workflow body, where a replay would produce a
  * different token every time.
+ *
+ * The provider's receipt comes back rather than
+ * being dropped: the provider accepting a message
+ * is not the same as anyone receiving it, and the
+ * operation id is the only handle on this send
+ * afterwards.
  */
 async function sendConfirmation(
   deps: WorkerDeps,
   subscriber: InternalSubscriberResponse,
-): Promise<void> {
+): Promise<SendReceipt> {
   const token = mintManageToken(deps.keyRing, {
     subscriberId: subscriber.id,
     tokenVersion: subscriber.tokenVersion,
     now: deps.now(),
   });
 
-  await deps.mailer.send(
+  return deps.mailer.send(
     renderConfirmationEmail({
       to: subscriber.email,
       manageUrl: manageUrl(deps.siteUrl, token),

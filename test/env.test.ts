@@ -7,7 +7,8 @@ const complete = {
   API_BASE_URL: 'http://localhost:3001',
   INTERNAL_API_TOKEN: 'dev-internal-api-token',
   LINK_KEYS: `k1:${'a'.repeat(64)}`,
-  SENDGRID_API_KEY: 'SG.dev-sendgrid-key',
+  TWILIO_API_KEY: 'SK_test',
+  TWILIO_API_SECRET: 'secret_test',
 };
 
 function messageThrownBy(read: () => unknown): string {
@@ -43,12 +44,49 @@ describe('readEnv', () => {
     ).toBe(elsewhere);
   });
 
-  it('defaults the SendGrid base URL, the sender and the site URL', () => {
+  it('defaults the mail API, the sender and the site URL', () => {
     const env = readEnv(complete);
 
-    expect(env.SENDGRID_BASE_URL).toBe('https://api.sendgrid.com');
+    // Left alone, the worker talks to the real
+    // provider. A local run points this at a mail
+    // sink instead.
+    expect(env.TWILIO_EMAIL_BASE_URL).toBe('https://comms.twilio.com');
     expect(env.MAIL_FROM).toBe('hello@mboss.dev');
     expect(env.SITE_URL).toBe('https://mboss.dev');
+  });
+
+  it('defaults the bounce scan to an hour and then two days', () => {
+    // Offsets from the moment the scan is
+    // enqueued, not gaps between its passes.
+    expect(readEnv(complete).BOUNCE_SCAN_DELAYS_S).toEqual([3600, 172800]);
+  });
+
+  it('reads an explicit bounce scan schedule', () => {
+    // Which is how a test or a local run shrinks
+    // the schedule without touching a clock.
+    expect(
+      readEnv({ ...complete, BOUNCE_SCAN_DELAYS_S: '5,10' })
+        .BOUNCE_SCAN_DELAYS_S,
+    ).toEqual([5, 10]);
+  });
+
+  it.each(['abc', '0', '-1', '1.5', ''])(
+    'rejects %o as a bounce scan schedule',
+    (delays) => {
+      expect(() =>
+        readEnv({ ...complete, BOUNCE_SCAN_DELAYS_S: delays }),
+      ).toThrow('BOUNCE_SCAN_DELAYS_S');
+    },
+  );
+
+  it('rejects a bounce scan schedule that goes backwards', () => {
+    // The workflow sleeps the difference between
+    // one offset and the last, so a descending
+    // list asks it to sleep a negative number of
+    // seconds.
+    expect(() =>
+      readEnv({ ...complete, BOUNCE_SCAN_DELAYS_S: '172800,3600' }),
+    ).toThrow('BOUNCE_SCAN_DELAYS_S');
   });
 
   it('strips a trailing slash from the site and API base URLs', () => {

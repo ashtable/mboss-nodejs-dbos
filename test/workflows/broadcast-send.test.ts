@@ -3,11 +3,12 @@ import type { InternalRecipient, SubscriberStatus } from '@mboss/zod';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InternalApiError } from '../../src/api/internal-client.js';
-import type { WorkerDeps } from '../../src/deps.js';
+import type { SenderDeps } from '../../src/deps.js';
 import { broadcastSend } from '../../src/workflows/broadcast-send.js';
+import { FakeBounceScan } from '../fakes/fake-bounce-scan.js';
 import { FakeInternalApi } from '../fakes/fake-internal-api.js';
 import { FakeMailer } from '../fakes/fake-mailer.js';
-import { testDeps } from '../helpers/deps.js';
+import { testSenderDeps } from '../helpers/deps.js';
 import { BROADCAST } from '../helpers/fixtures.js';
 import { reset, steps } from '../helpers/dbos-double.js';
 
@@ -29,6 +30,7 @@ function recipient(
 }
 
 let mailer: FakeMailer;
+let bounceScan: FakeBounceScan;
 
 /**
  * A broadcast seeded with the given recipients,
@@ -38,14 +40,15 @@ let mailer: FakeMailer;
 function seed(
   recipients: InternalRecipient[],
   options: { audience?: SubscriberStatus[]; pageSize?: number } = {},
-): { api: FakeInternalApi; deps: WorkerDeps } {
+): { api: FakeInternalApi; deps: SenderDeps } {
   const api = new FakeInternalApi(options.pageSize ?? 100);
   api.seedBroadcast(
     { ...BROADCAST, audience: options.audience ?? ['subscribed'] },
     recipients,
   );
   mailer = new FakeMailer();
-  return { api, deps: testDeps({ api, mailer }) };
+  bounceScan = new FakeBounceScan();
+  return { api, deps: testSenderDeps({ api, mailer, bounceScan }) };
 }
 
 function stepNames(): string[] {
@@ -317,6 +320,75 @@ describe('broadcastSend', () => {
     await broadcastSend(deps, { broadcastId: 'bc_1' });
 
     expect(steps.every((step) => 'retriesAllowed' in step.config)).toBe(true);
+  });
+
+  it('asks for one bounce scan covering everyone it sent to', async () => {
+    const { deps } = seed([recipient('sub_1'), recipient('sub_2')]);
+
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    // One scan per broadcast, not one per
+    // recipient: a scan is two days of sleeping,
+    // and an audience of a thousand would be a
+    // thousand of them.
+    expect(bounceScan.scans).toEqual([
+      {
+        sends: [
+          { email: 'sub_1@example.com', operationId: 'op_1' },
+          { email: 'sub_2@example.com', operationId: 'op_2' },
+        ],
+      },
+    ]);
+  });
+
+  it('leaves the skipped and the failed out of the scan', async () => {
+    const { deps } = seed([
+      recipient('sub_1'),
+      recipient('sub_2', 'unsubscribed'),
+      recipient('sub_3'),
+    ]);
+    mailer.refuse('sub_3@example.com', new Error('provider refused'));
+
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    // Neither has an operation behind it: one was
+    // never sent, and the other the provider
+    // refused.
+    expect(bounceScan.scans).toEqual([
+      { sends: [{ email: 'sub_1@example.com', operationId: 'op_1' }] },
+    ]);
+  });
+
+  it('asks for no scan when the broadcast sent to nobody', async () => {
+    const { deps } = seed([recipient('sub_1', 'unsubscribed')]);
+
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    expect(bounceScan.scans).toEqual([]);
+  });
+
+  it('asks for the scan after the broadcast is complete', async () => {
+    const { api, deps } = seed([recipient('sub_1')]);
+
+    await broadcastSend(deps, { broadcastId: 'bc_1' });
+
+    // A scan asked for mid-run would be enqueued
+    // by a workflow that can still stop at the
+    // next recipient it cannot account for.
+    expect(api.completeCalls).toEqual(['bc_1']);
+    expect(bounceScan.stepsAtStart).toHaveLength(1);
+    expect(bounceScan.stepsAtStart[0]?.at(-1)).toBe('complete');
+  });
+
+  it('asks for no scan when the run stopped early', async () => {
+    const { api, deps } = seed([recipient('sub_1'), recipient('sub_2')]);
+    api.failNextCall('flipDelivery', new InternalApiError(404, 'Not Found'));
+
+    await expect(
+      broadcastSend(deps, { broadcastId: 'bc_1' }),
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(bounceScan.scans).toEqual([]);
   });
 
   it('retries an internal-API call that answered with a server error', async () => {

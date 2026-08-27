@@ -22,26 +22,63 @@ export type Call =
   | { kind: 'setConfig'; config: unknown }
   | { kind: 'registerWorkflow'; name: string }
   | { kind: 'launch' }
-  | { kind: 'registerQueue'; name: string; options: unknown };
+  | { kind: 'registerQueue'; name: string; options: unknown }
+  | { kind: 'startWorkflow'; params: unknown; input: unknown };
 
 export const calls: Call[] = [];
 export const steps: StepRecord[] = [];
 
+/**
+ * Every durable sleep, in seconds. The schedule a
+ * test runs against is shrunk by handing the
+ * workflow smaller delays — the clock itself is
+ * never mocked, so what is asserted is the number
+ * the workflow asked to sleep for.
+ */
+export const sleeps: number[] = [];
+
 let stepDepth = 0;
+let currentWorkflowID: string | undefined;
 
 /** True while a step callback is on the stack. */
 export function inStep(): boolean {
   return stepDepth > 0;
 }
 
+/**
+ * Stands the test inside a running workflow, for
+ * code that derives an id from the one it is
+ * running under.
+ */
+export function setWorkflowID(id: string | undefined): void {
+  currentWorkflowID = id;
+}
+
 /** Clears the recordings. Call it in `beforeEach`. */
 export function reset(): void {
   calls.length = 0;
   steps.length = 0;
+  sleeps.length = 0;
   stepDepth = 0;
+  currentWorkflowID = undefined;
+}
+
+/**
+ * The real SDK refuses to start a workflow or
+ * sleep durably from inside a step, so the double
+ * refuses too — otherwise a workflow that only
+ * fails in production passes here.
+ */
+function refuseInsideStep(what: string): void {
+  if (inStep())
+    throw new Error(`Invalid call to a 'workflow' function (${what})`);
 }
 
 export const DBOS = {
+  get workflowID(): string | undefined {
+    return currentWorkflowID;
+  },
+
   setConfig(config: unknown): void {
     calls.push({ kind: 'setConfig', config });
   },
@@ -60,6 +97,27 @@ export const DBOS = {
 
   async registerQueue(name: string, options?: unknown): Promise<void> {
     calls.push({ kind: 'registerQueue', name, options });
+  },
+
+  /**
+   * Records the enqueue and does not run the
+   * target. A sender's test asserts what it asked
+   * for; running the scan it starts would drag a
+   * two-day workflow into a unit test of a send.
+   */
+  startWorkflow<Args extends unknown[], Return>(
+    _target: (...args: Args) => Promise<Return>,
+    params?: unknown,
+  ): (...args: Args) => Promise<void> {
+    refuseInsideStep('startWorkflow');
+    return async (...args: Args) => {
+      calls.push({ kind: 'startWorkflow', params, input: args[0] });
+    };
+  },
+
+  async sleepSeconds(seconds: number): Promise<void> {
+    refuseInsideStep('sleepSeconds');
+    sleeps.push(seconds);
   },
 
   /**

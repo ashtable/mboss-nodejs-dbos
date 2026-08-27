@@ -4,6 +4,9 @@ import type {
   DeliveryFlipRequest,
   DeliveryFlipResponse,
   DeliveryStatus,
+  EmailEvent,
+  EmailEventsRequest,
+  EmailEventsResponse,
   InternalBroadcastResponse,
   InternalRecipient,
   InternalRecipientsResponse,
@@ -41,6 +44,8 @@ export class FakeInternalApi implements InternalApi {
   readonly confirmationSent: string[] = [];
   readonly flips: DeliveryFlipRequest[] = [];
   readonly completeCalls: string[] = [];
+  /** Every event posted, batches flattened. */
+  readonly emailEvents: EmailEvent[] = [];
 
   private readonly subscribers = new Map<string, InternalSubscriberResponse>();
   private readonly broadcasts = new Map<string, InternalBroadcastResponse>();
@@ -202,5 +207,19 @@ export class FakeInternalApi implements InternalApi {
       failedCount: count('failed'),
       skippedCount: count('skipped'),
     };
+  }
+
+  /**
+   * The real route refuses an empty batch, so this
+   * one does too — a scan that posts nothing must
+   * not post at all.
+   */
+  async postEmailEvents(
+    events: EmailEventsRequest,
+  ): Promise<EmailEventsResponse> {
+    this.calls.push(`postEmailEvents:${events.length}`);
+    if (events.length === 0) throw new InternalApiError(400, 'Bad Request');
+    this.emailEvents.push(...events);
+    return { processed: events.length, bounced: events.length };
   }
 }
