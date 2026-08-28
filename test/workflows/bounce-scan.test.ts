@@ -261,6 +261,9 @@ describe('startBounceScanOn', () => {
         params: {
           workflowID: 'bounce-scan:confirm:sub_1:0',
           queueName: 'email-status',
+          enqueueOptions: {
+            deduplicationID: 'bounce-scan:confirm:sub_1:0',
+          },
           duplicationPolicy: 'return-existing',
         },
         input,

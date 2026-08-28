@@ -92,9 +92,11 @@ export function startBounceScanOn(
   scan: (input: BounceScanInput) => Promise<void>,
 ): StartBounceScan {
   return async (input) => {
+    const id = `bounce-scan:${DBOS.workflowID}`;
     await DBOS.startWorkflow(scan, {
-      workflowID: `bounce-scan:${DBOS.workflowID}`,
+      workflowID: id,
       queueName: EMAIL_STATUS_QUEUE,
+      enqueueOptions: { deduplicationID: id },
       duplicationPolicy: 'return-existing',
     })(input);
   };
