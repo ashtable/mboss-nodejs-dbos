@@ -5,3 +5,12 @@ coverage
 .env
 .env*.local
 test
+
+# The Dockerfile clones these two at the commits
+# the gitlinks name. Excluding them here is what
+# stops `COPY . .` from putting the build
+# context's copy back over the clone — which on
+# Railway is an empty directory, and would undo
+# the clone entirely.
+mboss-zod
+mboss-core
