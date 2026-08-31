@@ -2,7 +2,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import type { WorkerDeps } from '../deps.js';
 import type { DeliveryState } from '../email/delivery-status.js';
-import { isTransientSendFailure, MailSendError } from '../email/mailer.js';
+import { isMailSendRefusal, isTransientSendFailure } from '../email/mailer.js';
 import { EMAIL_STATUS_QUEUE } from '../worker.js';
 import { RETRY_THE_API } from './retry.js';
 
@@ -172,25 +172,39 @@ async function readStates(
  * A step the retry policy declined to repeat throws
  * the refusal itself. One that spent every attempt
  * throws an error of the SDK's own instead, which
- * carries the attempts it made on `errors`. That
- * one is matched by shape rather than by class:
- * the class sits behind the SDK's error namespace,
- * and reaching for it here would tie this file to
- * the module the workflow tests replace wholesale.
+ * carries the attempts it made on `errors`.
+ *
+ * Both are matched by shape rather than by class.
+ * For the SDK's error that is because the class
+ * sits behind its error namespace, and reaching for
+ * it here would tie this file to the module the
+ * workflow tests replace wholesale. For our own it
+ * is because this runs in the workflow body, where
+ * the error may be one DBOS checkpointed and
+ * re-threw on a replay: the fields survive but the
+ * prototype does not, arriving as a bare `Error` at
+ * the top level and as a plain object inside
+ * `errors`. A class check passes the first time
+ * through and fails every recovery, turning "the
+ * provider would not answer, so ask again next
+ * pass" into a workflow that dies on restart.
  *
  * Every one of those attempts has to be a refusal.
  * A batch where some other fault crept in is not a
- * batch the provider merely would not answer.
+ * batch the provider merely would not answer. That
+ * they arrive at all depends on the default
+ * serializer: the SDK's portable mode records an
+ * error as a name, message, code and data, no more.
  */
 function isProviderRefusal(error: unknown): boolean {
-  if (error instanceof MailSendError) return true;
+  if (isMailSendRefusal(error)) return true;
   if (typeof error !== 'object' || error === null) return false;
 
   const attempts = (error as { errors?: unknown }).errors;
   return (
     Array.isArray(attempts) &&
     attempts.length > 0 &&
-    attempts.every((cause) => cause instanceof MailSendError)
+    attempts.every(isMailSendRefusal)
   );
 }
 

@@ -59,6 +59,31 @@ function exhausted(...errors: Error[]): Error {
   return Object.assign(new Error('step spent every attempt'), { errors });
 }
 
+/**
+ * A refusal as a replay hands it back. DBOS records
+ * a failed step's error and re-throws it on every
+ * later recovery of that run, and what arrives is
+ * the same fields with the prototype gone.
+ *
+ * Modelled here rather than round-tripped through
+ * the SDK's serializer on purpose: what this scan
+ * depends on is that a refusal is recognised by its
+ * fields, whatever produced the object. A test that
+ * imported the serializer would be asserting which
+ * library DBOS happens to use this week.
+ */
+function replayed(error: MailSendError): Error {
+  return Object.assign(new Error(error.message), {
+    name: error.name,
+    code: error.code,
+  });
+}
+
+/** The same, as it appears inside `errors`. */
+function replayedCause(error: MailSendError): unknown {
+  return { name: error.name, message: error.message, code: error.code };
+}
+
 beforeEach(() => {
   reset();
   api = new FakeInternalApi();
@@ -209,6 +234,58 @@ describe('bounceScan', () => {
 
     expect(sleeps).toEqual([3600, 169200]);
     expect(api.emailEvents).toEqual([]);
+  });
+
+  it('leaves a send pending when a replayed refusal comes back', async () => {
+    deliveryStatus.failEveryRead(
+      replayed(new MailSendError(503, 'Service Unavailable')),
+    );
+
+    // The scan that matters is the one that already
+    // crashed once. On recovery the refusal arrives
+    // as data rather than as an instance, and a
+    // check on the class would read it as a fault of
+    // ours and kill a run that only needed to ask
+    // again on the next pass.
+    await expect(bounceScan(deps, { sends: [PAT] })).resolves.toBeUndefined();
+
+    expect(sleeps).toEqual([3600, 169200]);
+    expect(api.emailEvents).toEqual([]);
+  });
+
+  it('leaves a send pending when a replayed batch spent every attempt', async () => {
+    deliveryStatus.failEveryRead(
+      Object.assign(new Error('step spent every attempt'), {
+        errors: [
+          replayedCause(new MailSendError(503, 'Service Unavailable')),
+          replayedCause(new MailSendError(503, 'Service Unavailable')),
+        ],
+      }),
+    );
+
+    await expect(bounceScan(deps, { sends: [PAT] })).resolves.toBeUndefined();
+
+    expect(sleeps).toEqual([3600, 169200]);
+    expect(api.emailEvents).toEqual([]);
+  });
+
+  it('still fails the scan when a replayed batch hid a fault of ours', async () => {
+    deliveryStatus.failEveryRead(
+      Object.assign(new Error('step spent every attempt'), {
+        errors: [
+          replayedCause(new MailSendError(503, 'Service Unavailable')),
+          { name: 'TypeError', message: 'read is not a function' },
+        ],
+      }),
+    );
+
+    // Reading refusals by shape must not widen into
+    // reading everything as a refusal: a replayed
+    // batch carrying one of our own bugs is still a
+    // scan that will never work.
+    await expect(bounceScan(deps, { sends: [PAT] })).rejects.toThrow(
+      'spent every attempt',
+    );
   });
 
   it('lets a failure that is not the provider refusing fail the scan', async () => {

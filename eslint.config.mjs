@@ -5,13 +5,15 @@ import prettier from 'eslint-config-prettier';
 /**
  * `@mboss/core`'s barrel re-exports the
  * workflow-core modules, which depend on elkjs
- * and ts-morph. The cloud services need only the
- * dependency-free signed-links module, so
- * importing the barrel would pull a graph-layout
- * engine and a TypeScript compiler wrapper into
- * this service's type graph for nothing.
- * `test/lint-rules.test.ts` proves the rule
- * actually fires.
+ * and ts-morph. This worker needs only
+ * signed-links and email — both dependency-free —
+ * so importing the barrel would pull a
+ * graph-layout engine and a TypeScript compiler
+ * wrapper into this service's type graph for
+ * nothing. The allow-list below names exactly
+ * those two subpaths and blocks every other, the
+ * barrel included. `test/lint-rules.test.ts`
+ * proves the rule actually fires.
  */
 const coreSubpathOnly =
   'Cloud repos import only the @mboss/core/signed-links ' +

@@ -36,6 +36,8 @@ export type MailerConfig = {
   from: string;
 };
 
+const MAIL_SEND_ERROR_NAME = 'MailSendError';
+
 /**
  * A send the provider refused. `code` is the HTTP
  * status, named to match what
@@ -50,8 +52,35 @@ export class MailSendError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = 'MailSendError';
+    this.name = MAIL_SEND_ERROR_NAME;
   }
+}
+
+/**
+ * Whether a value is one of these refusals, read by
+ * shape rather than by class.
+ *
+ * A refusal that a workflow body inspects may have
+ * crossed a durable checkpoint on the way. DBOS
+ * records a failed step's error and re-throws it on
+ * every later replay of that run, and what comes
+ * back is a bare `Error` with this class's prototype
+ * gone — or a plain object, for a refusal nested
+ * inside another error. So `instanceof` answers true
+ * on the first attempt and false on every recovery
+ * of the same workflow, which is the one moment the
+ * answer has to hold.
+ *
+ * `name` and `code` are both plain own properties,
+ * so they do survive. The name is shared with the
+ * constructor above so a rename cannot leave this
+ * reading for a string nothing throws any more.
+ */
+export function isMailSendRefusal(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+
+  const shape = value as { name?: unknown; code?: unknown };
+  return shape.name === MAIL_SEND_ERROR_NAME && typeof shape.code === 'number';
 }
 
 /**
